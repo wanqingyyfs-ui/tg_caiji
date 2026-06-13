@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}候选详情 - TG Suoyin Collector{% endblock %}
+{% block content %}
+<h1>候选详情</h1>
+
+<section class="panel">
+  <h2>{{ item.title or item.name or item.username }}</h2>
+  <p><a href="{{ item.url }}" target="_blank">{{ item.url }}</a></p>
+
+  <div class="detail-grid">
+    <div><strong>ID</strong><br>{{ item.id }}</div>
+    <div><strong>状态</strong><br><span class="status status-{{ item.status }}">{{ item.status }}</span></div>
+    <div><strong>类型</strong><br>{{ item.type or item.type_hint or "-" }}</div>
+    <div><strong>人数</strong><br>{{ item.count or 0 }}</div>
+    <div><strong>置信度</strong><br>{{ "%.2f"|format(item.confidence or 0) }}</div>
+    <div><strong>Username</strong><br>{{ item.username or "-" }}</div>
+    <div><strong>来源</strong><br>{{ item.source_chat or "-" }}</div>
+    <div><strong>消息 ID</strong><br>{{ item.source_message_id or "-" }}</div>
+  </div>
+
+  <h3>简介</h3>
+  <p class="desc-block">{{ item.description or "暂无" }}</p>
+
+  <h3>发现消息片段</h3>
+  <p class="desc-block">{{ item.text_snippet or "暂无" }}</p>
+</section>
+
+<section class="panel">
+  <h2>审核</h2>
+  <form method="post" action="/candidates/{{ item.id }}/review" class="grid-form">
+    <label>审核状态
+      <select name="status">
+        <option value="new" {% if item.status == "new" %}selected{% endif %}>待审核</option>
+        <option value="approved" {% if item.status == "approved" %}selected{% endif %}>通过</option>
+        <option value="rejected" {% if item.status == "rejected" %}selected{% endif %}>拒绝</option>
+        <option value="exported" {% if item.status == "exported" %}selected{% endif %}>已导出</option>
+      </select>
+    </label>
+    <label>拒绝原因
+      <input name="reject_reason" value="{{ item.reject_reason or '' }}" placeholder="低质量、无中文、疑似广告等">
+    </label>
+    <label class="wide">备注
+      <textarea name="note" rows="4">{{ item.review_note or "" }}</textarea>
+    </label>
+    <button type="submit">保存审核结果</button>
+    <a class="button secondary" href="/candidates">返回列表</a>
+  </form>
+</section>
+{% endblock %}

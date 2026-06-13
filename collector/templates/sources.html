@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}监听源 - TG Suoyin Collector{% endblock %}
+{% block content %}
+<h1>监听源</h1>
+
+<section class="panel">
+  <h2>添加监听源</h2>
+  <form method="post" action="/sources/add" class="grid-form">
+    <label>名称
+      <input name="name" required placeholder="中文资源群A">
+    </label>
+    <label>群组/频道
+      <input name="chat_ref" required placeholder="@example_group 或 https://t.me/example">
+    </label>
+    <label>回补条数
+      <input name="backfill_limit" type="number" min="1" max="10000" value="500">
+    </label>
+    <label class="checkbox">
+      <input name="enabled" type="checkbox" checked> 启用
+    </label>
+    <button type="submit">保存</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>已有监听源</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>名称</th>
+        <th>Chat</th>
+        <th>启用</th>
+        <th>回补条数</th>
+        <th>最后错误</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for s in sources %}
+      <tr>
+        <td>{{ s.id }}</td>
+        <td>{{ s.name }}</td>
+        <td><code>{{ s.chat_ref }}</code></td>
+        <td>{{ "是" if s.enabled else "否" }}</td>
+        <td>{{ s.backfill_limit }}</td>
+        <td class="error">{{ s.last_error or "" }}</td>
+        <td class="actions">
+          <form method="post" action="/sources/{{ s.id }}/toggle">
+            <button type="submit">{{ "停用" if s.enabled else "启用" }}</button>
+          </form>
+          <form method="post" action="/sources/{{ s.id }}/delete" onsubmit="return confirm('确认删除？')">
+            <button type="submit" class="danger">删除</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

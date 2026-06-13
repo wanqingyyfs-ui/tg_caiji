@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}概览 - TG Suoyin Collector{% endblock %}
+{% block content %}
+<h1>概览</h1>
+
+<div class="cards">
+  <div class="card"><div class="num">{{ stats.total }}</div><div>全部候选</div></div>
+  <div class="card"><div class="num">{{ stats.new }}</div><div>待审核</div></div>
+  <div class="card"><div class="num">{{ stats.approved }}</div><div>已通过</div></div>
+  <div class="card"><div class="num">{{ stats.rejected }}</div><div>已拒绝</div></div>
+  <div class="card"><div class="num">{{ stats.sources }}/{{ stats.enabled_sources }}</div><div>监听源 / 启用</div></div>
+</div>
+
+<section class="panel">
+  <h2>导出给 tg_suoyin</h2>
+  <p class="muted">默认导出已通过资源，文件位置：<code>{{ export_path }}</code></p>
+  <form method="post" action="/export" class="inline-form">
+    <label>状态
+      <select name="status">
+        <option value="approved" selected>已通过</option>
+        <option value="new">待审核</option>
+        <option value="exported">已导出</option>
+      </select>
+    </label>
+    <label>最低置信度
+      <input name="min_confidence" type="number" step="0.01" min="0" max="1" value="0">
+    </label>
+    <label class="checkbox">
+      <input name="mark_exported" type="checkbox"> 导出后标记为 exported
+    </label>
+    <button type="submit">立即导出 JSONL</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>推荐操作顺序</h2>
+  <ol>
+    <li>在「监听源」添加群组/频道。</li>
+    <li>命令行执行 <code>python -m collector.main backfill --limit 500</code>。</li>
+    <li>执行 <code>python -m collector.main enrich --limit 100</code> 补充标题、简介、人数。</li>
+    <li>在「候选资源」按人数、简介关键词筛选并审核。</li>
+    <li>导出 JSONL 后导入 tg_suoyin。</li>
+  </ol>
+</section>
+{% endblock %}

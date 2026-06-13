@@ -1,0 +1,10 @@
+sources:
+  - name: "示例中文资源群"
+    chat: "@example_group"
+    enabled: true
+    backfill_limit: 500
+
+  - name: "示例频道"
+    chat: "https://t.me/example_channel"
+    enabled: false
+    backfill_limit: 200

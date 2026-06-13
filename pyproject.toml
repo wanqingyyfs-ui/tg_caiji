@@ -1,0 +1,19 @@
+[project]
+name = "tg-suoyin-collector"
+version = "1.0.0"
+description = "Telegram resource collector for tg_suoyin"
+requires-python = ">=3.11"
+dependencies = [
+  "telethon>=1.43,<2",
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.34,<1",
+  "jinja2>=3.1,<4",
+  "python-multipart>=0.0.9,<1",
+  "python-dotenv>=1.0,<2",
+  "pydantic>=2.7,<3",
+  "pydantic-settings>=2.4,<3",
+  "PyYAML>=6.0,<7"
+]
+
+[tool.setuptools]
+packages = ["collector"]
