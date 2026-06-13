@@ -60,6 +60,21 @@ async def fetch_meta_for_username(client, username: str) -> dict[str, Any]:
         entity = await client.get_entity(username)
         detected_type = type_from_entity(entity)
         title = best_title(entity, username)
+        if detected_type is None:
+            meta.update(
+                {
+                    "valid": False,
+                    "private": False,
+                    "title": title,
+                    "description": "not_channel_group_or_bot",
+                    "type": None,
+                    "count": None,
+                    "telegram_id": telegram_id_from_entity(entity),
+                    "username": canonical_username(getattr(entity, "username", None)) or username,
+                }
+            )
+            return meta
+
         description = None
         count = first_positive_int(
             getattr(entity, "participants_count", None),
@@ -113,28 +128,35 @@ async def enrich_pending(settings: Settings, limit: int = 100, force: bool = Fal
             or not row.get("enriched_at")
             or row.get("count") is None
             or int(row.get("count") or 0) == 0
+            or not row.get("type")
         )
     ][:limit]
 
     if not rows:
-        return {"total": 0, "updated": 0, "failed": 0, "with_count": 0}
+        return {"total": 0, "updated": 0, "failed": 0, "with_count": 0, "invalid": 0}
 
     client = build_client(settings)
     updated = 0
     failed = 0
     with_count = 0
+    invalid = 0
 
     async with client:
         for row in rows:
             try:
                 meta = await fetch_meta_for_username(client, row["username"])
                 storage.update_candidate_meta(settings.collector_db, row["url"], meta)
-                updated += 1
-                if meta.get("count"):
-                    with_count += 1
-                    print(f"已补充人数：{row['username']} -> {meta['count']}")
+                if not meta.get("valid"):
+                    storage.set_candidate_status(settings.collector_db, int(row["id"]), "rejected", reject_reason=meta.get("description") or "invalid")
+                    invalid += 1
+                    print(f"已拒绝非资源链接：{row['username']}")
                 else:
-                    print(f"人数未知：{row['username']}，已补充标题/类型但 Telegram 未返回人数")
+                    updated += 1
+                    if meta.get("count"):
+                        with_count += 1
+                        print(f"已补充人数：{row['username']} -> {meta['count']}")
+                    else:
+                        print(f"人数未知：{row['username']}，已补充标题/类型但 Telegram 未返回人数")
             except FloodWaitError as exc:
                 wait_seconds = min(int(exc.seconds), 60)
                 print(f"触发 FloodWait，等待 {wait_seconds} 秒后继续")
@@ -145,4 +167,4 @@ async def enrich_pending(settings: Settings, limit: int = 100, force: bool = Fal
                 failed += 1
             await asyncio.sleep(max(float(settings.request_delay_seconds), 0.5))
 
-    return {"total": len(rows), "updated": updated, "failed": failed, "with_count": with_count}
+    return {"total": len(rows), "updated": updated, "failed": failed, "with_count": with_count, "invalid": invalid}
