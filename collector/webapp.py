@@ -124,11 +124,11 @@ async def candidates_page(
 
 @app.post("/candidates/batch")
 async def batch_candidates(
-    ids: Annotated[list[int], Form(default=[])],
+    ids: Annotated[list[int] | None, Form()] = None,
     action: Annotated[str, Form()] = "approve",
 ):
     status_map = {"approve": "approved", "reject": "rejected", "new": "new"}
-    storage.batch_set_status(settings.collector_db, ids, status_map.get(action, "new"))
+    storage.batch_set_status(settings.collector_db, ids or [], status_map.get(action, "new"))
     return redirect("/candidates")
 
 
