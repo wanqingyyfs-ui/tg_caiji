@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from . import storage
+from .review_memory import bootstrap_from_candidates, ensure_review_memory
 from .settings import Settings
 
 
 def normalize_database(settings: Settings) -> dict[str, int]:
+    ensure_review_memory(settings.collector_db)
+    memory_result = bootstrap_from_candidates(settings.collector_db)
     with storage.connect(settings.collector_db) as conn:
         zero_count_rows = conn.execute(
             "SELECT COUNT(*) FROM candidates WHERE count IS NOT NULL AND count <= 0"
@@ -17,10 +20,13 @@ def normalize_database(settings: Settings) -> dict[str, int]:
         "duplicate_groups": int(dedupe_result["groups"]),
         "duplicate_rows_removed": int(dedupe_result["removed"]),
         "normalized_rows": int(dedupe_result["normalized"]),
+        "reviewed_remembered": int(memory_result["remembered"]),
     }
 
 
 def clear_collected_candidates(settings: Settings, include_sources: bool = False) -> dict[str, int]:
+    ensure_review_memory(settings.collector_db)
+    bootstrap_from_candidates(settings.collector_db)
     op = "DE" + "LETE"
     with storage.connect(settings.collector_db) as conn:
         candidates = conn.execute("SELECT COUNT(*) FROM candidates").fetchone()[0]
