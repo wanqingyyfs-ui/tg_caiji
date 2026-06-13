@@ -5,7 +5,6 @@ import asyncio
 import signal
 import subprocess
 import sys
-import time
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,12 +61,12 @@ async def enrich_loop(limit: int, interval: int) -> None:
     settings = get_settings()
     ensure_runtime_dirs(settings)
     storage.init_db(settings.collector_db)
-    print(f"自动 enrich 已启动：每 {interval} 秒处理最多 {limit} 条。", flush=True)
+    print(f"自动公开页 enrich 已启动：每 {interval} 秒处理最多 {limit} 条。不使用 Telegram 登录账号。", flush=True)
     while True:
         try:
             result = await enrich_pending(settings, limit=limit)
             print(
-                "自动 enrich 完成："
+                "自动公开页 enrich 完成："
                 f"total={result.get('total', 0)} "
                 f"updated={result.get('updated', 0)} "
                 f"with_count={result.get('with_count', 0)} "
@@ -76,7 +75,7 @@ async def enrich_loop(limit: int, interval: int) -> None:
                 flush=True,
             )
         except Exception as exc:
-            print(f"自动 enrich 出错：{exc}", flush=True)
+            print(f"自动公开页 enrich 出错：{exc}", flush=True)
         await asyncio.sleep(max(int(interval), 10))
 
 
@@ -103,10 +102,10 @@ async def supervise(args: argparse.Namespace) -> None:
         await asyncio.sleep(2)
         webbrowser.open(f"http://{args.host}:{args.port}/candidates")
 
-    if not args.no_listener:
+    if args.telegram_listener:
         processes.append(
             start_process(
-                "监听采集",
+                "Telegram 登录监听",
                 build_listener_command(
                     backfill_on_start=args.backfill_on_start,
                     backfill_limit=args.backfill_limit,
@@ -115,6 +114,8 @@ async def supervise(args: argparse.Namespace) -> None:
                 ),
             )
         )
+    else:
+        print("默认没有启动 Telegram 登录监听；候选链接人数和类型只用公开网页 enrich。", flush=True)
 
     enrich_task = None
     if not args.no_enrich:
@@ -124,12 +125,11 @@ async def supervise(args: argparse.Namespace) -> None:
     print(f"Web 地址：http://{args.host}:{args.port}/candidates", flush=True)
 
     while not stop_event.is_set():
-        for managed in processes:
+        for managed in list(processes):
             code = managed.process.poll()
             if code is not None:
                 print(f"{managed.name} 已退出，退出码={code}。其他服务继续运行。", flush=True)
                 processes.remove(managed)
-                break
         await asyncio.sleep(2)
 
     print("正在停止一键服务...", flush=True)
@@ -141,11 +141,11 @@ async def supervise(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Start web, listener, and public-page enrichment together")
+    parser = argparse.ArgumentParser(description="Start web and public-page enrichment together")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8008)
     parser.add_argument("--open-browser", action="store_true")
-    parser.add_argument("--no-listener", action="store_true")
+    parser.add_argument("--telegram-listener", action="store_true", help="需要实时读取 Telegram 消息时才启用，会使用登录账号")
     parser.add_argument("--no-enrich", action="store_true")
     parser.add_argument("--no-mentions", action="store_true")
     parser.add_argument("--debug", action="store_true")
