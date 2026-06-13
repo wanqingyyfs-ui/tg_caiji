@@ -9,6 +9,7 @@ import uvicorn
 from . import storage
 from .backfill import backfill
 from .config_loader import import_sources_from_yaml
+from .diagnostics import doctor
 from .enricher import enrich_pending
 from .exporter import export_csv, export_jsonl
 from .listener import listen
@@ -21,6 +22,22 @@ async def login_command(settings):
     async with client:
         me = await client.get_me()
         print(f"登录成功：{getattr(me, 'first_name', '')} / id={me.id}")
+
+
+def add_mention_flags(cmd) -> None:
+    cmd.add_argument(
+        "--include-mentions",
+        dest="include_mentions",
+        action="store_true",
+        default=True,
+        help="识别 @username，默认开启",
+    )
+    cmd.add_argument(
+        "--no-mentions",
+        dest="include_mentions",
+        action="store_false",
+        help="只识别 t.me/username 链接，不识别 @username",
+    )
 
 
 def main() -> None:
@@ -39,12 +56,19 @@ def main() -> None:
     import_sources = sub.add_parser("import-sources", help="从 YAML 导入监听源")
     import_sources.add_argument("--file", default="config/sources.yaml")
 
+    doctor_cmd = sub.add_parser("doctor", help="诊断监听源是否可访问，并抽样检查最近消息里的链接")
+    doctor_cmd.add_argument("--limit", type=int, default=30)
+    add_mention_flags(doctor_cmd)
+
     backfill_cmd = sub.add_parser("backfill", help="回补历史消息")
     backfill_cmd.add_argument("--limit", type=int, default=None)
-    backfill_cmd.add_argument("--include-mentions", action="store_true")
+    add_mention_flags(backfill_cmd)
 
     listen_cmd = sub.add_parser("listen", help="实时监听消息")
-    listen_cmd.add_argument("--include-mentions", action="store_true")
+    add_mention_flags(listen_cmd)
+    listen_cmd.add_argument("--debug", action="store_true", help="打印每条收到的消息，方便判断是否真的监听到了")
+    listen_cmd.add_argument("--backfill-on-start", action="store_true", help="启动监听前先自动回补一批历史消息")
+    listen_cmd.add_argument("--backfill-limit", type=int, default=100, help="--backfill-on-start 的回补条数")
 
     enrich_cmd = sub.add_parser("enrich", help="补充候选资源元信息")
     enrich_cmd.add_argument("--limit", type=int, default=100)
@@ -89,13 +113,28 @@ def main() -> None:
         print(f"已导入监听源：{result['imported']} 个")
         return
 
+    if args.command == "doctor":
+        asyncio.run(doctor(settings, sample_limit=args.limit, include_mentions=args.include_mentions))
+        return
+
     if args.command == "backfill":
         result = asyncio.run(backfill(settings, limit=args.limit, include_mentions=args.include_mentions))
         print(f"回补完成：sources={result['sources']} messages={result['messages']} candidates={result['candidates']}")
         return
 
     if args.command == "listen":
-        asyncio.run(listen(settings, include_mentions=args.include_mentions))
+        try:
+            asyncio.run(
+                listen(
+                    settings,
+                    include_mentions=args.include_mentions,
+                    debug=args.debug,
+                    backfill_on_start=args.backfill_on_start,
+                    backfill_limit=args.backfill_limit,
+                )
+            )
+        except KeyboardInterrupt:
+            print("监听已停止。")
         return
 
     if args.command == "enrich":
