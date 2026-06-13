@@ -9,9 +9,9 @@ COUNT_RE = re.compile(
     r"([0-9][0-9\s,\.]*\s*[KkMm]?)\s+(subscribers|members|users|online)",
     re.IGNORECASE,
 )
-EXTRA_RE = re.compile(r'<div class="tgme_page_extra">(.*?)</div>', re.IGNORECASE | re.DOTALL)
-TITLE_RE = re.compile(r'<div class="tgme_page_title"[^>]*>\s*<span[^>]*>(.*?)</span>', re.IGNORECASE | re.DOTALL)
-DESC_RE = re.compile(r'<div class="tgme_page_description"[^>]*>(.*?)</div>', re.IGNORECASE | re.DOTALL)
+EXTRA_RE = re.compile(r'<div[^>]*class=["\'][^"\']*tgme_page_extra[^"\']*["\'][^>]*>(.*?)</div>', re.IGNORECASE | re.DOTALL)
+TITLE_RE = re.compile(r'<div[^>]*class=["\'][^"\']*tgme_page_title[^"\']*["\'][^>]*>.*?<span[^>]*>(.*?)</span>', re.IGNORECASE | re.DOTALL)
+DESC_RE = re.compile(r'<div[^>]*class=["\'][^"\']*tgme_page_description[^"\']*["\'][^>]*>(.*?)</div>', re.IGNORECASE | re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -46,6 +46,22 @@ def _parse_count(value: str) -> int | None:
     return int(base)
 
 
+def _count_and_type_from_text(value: str) -> tuple[int | None, str | None]:
+    plain = _strip_tags(value)
+    match = COUNT_RE.search(plain)
+    if not match:
+        return None, None
+    count = _parse_count(match.group(1))
+    word = match.group(2).lower()
+    if word == "subscribers":
+        return count, "channel"
+    if word in {"members", "online"}:
+        return count, "group"
+    if word == "users":
+        return count, "bot"
+    return count, None
+
+
 def fetch_public_page_meta(username: str, timeout: float = 10.0) -> PublicPageMeta:
     username = username.strip().lstrip("@")
     if not username:
@@ -74,19 +90,11 @@ def fetch_public_page_meta(username: str, timeout: float = 10.0) -> PublicPageMe
     if desc_m:
         desc = _strip_tags(desc_m.group(1)) or None
 
-    extra_text = ""
     extra_m = EXTRA_RE.search(text)
     if extra_m:
-        extra_text = _strip_tags(extra_m.group(1))
-        m = COUNT_RE.search(extra_text)
-        if m:
-            count = _parse_count(m.group(1))
-            word = m.group(2).lower()
-            if word == "subscribers":
-                type_hint = "channel"
-            elif word in {"members", "online"}:
-                type_hint = "group"
-            elif word == "users":
-                type_hint = "bot"
+        count, type_hint = _count_and_type_from_text(extra_m.group(1))
+
+    if count is None:
+        count, type_hint = _count_and_type_from_text(text)
 
     return PublicPageMeta(title=title, description=desc, count=count, type_hint=type_hint)
