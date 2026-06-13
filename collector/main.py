@@ -13,6 +13,7 @@ from .diagnostics import doctor
 from .enricher import enrich_pending
 from .exporter import export_csv, export_jsonl
 from .listener import listen
+from .review_memory import bootstrap_from_candidates, ensure_review_memory
 from .settings import get_settings, ensure_runtime_dirs
 from .telegram_client import build_client
 
@@ -88,6 +89,8 @@ def main() -> None:
     settings = get_settings()
     ensure_runtime_dirs(settings)
     storage.init_db(settings.collector_db)
+    ensure_review_memory(settings.collector_db)
+    bootstrap_from_candidates(settings.collector_db)
 
     if args.command == "init-db":
         print(f"数据库已初始化：{settings.collector_db}")
@@ -119,7 +122,11 @@ def main() -> None:
 
     if args.command == "backfill":
         result = asyncio.run(backfill(settings, limit=args.limit, include_mentions=args.include_mentions))
-        print(f"回补完成：sources={result['sources']} messages={result['messages']} candidates={result['candidates']}")
+        print(
+            f"回补完成：sources={result['sources']} messages={result['messages']} "
+            f"candidates={result['candidates']} skipped_reviewed={result.get('skipped_reviewed', 0)} "
+            f"skipped_invalid={result.get('skipped_invalid', 0)}"
+        )
         return
 
     if args.command == "listen":
