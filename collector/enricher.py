@@ -5,6 +5,7 @@ import asyncio
 from . import storage
 from .normalizer import canonical_username
 from .public_page import fetch_public_page_meta
+from .review_memory import remember_username
 from .settings import Settings
 
 
@@ -24,7 +25,12 @@ def fetch_meta_from_public_page(username: str) -> dict:
         "type_hint": public_meta.type_hint,
         "count": public_meta.count,
         "telegram_id": None,
+        "fetched": public_meta.fetched,
     }
+
+    if not public_meta.fetched:
+        meta["description"] = "public_page_unreachable"
+        return meta
 
     if public_meta.type_hint in ALLOWED_PUBLIC_TYPES:
         meta["valid"] = True
@@ -57,9 +63,24 @@ async def enrich_pending(settings: Settings, limit: int = 100, force: bool = Fal
     for row in rows:
         try:
             meta = fetch_meta_from_public_page(row["username"])
+            if not meta.get("fetched"):
+                failed += 1
+                print(f"公开页暂时无法访问，跳过：{row['username']}")
+                await asyncio.sleep(max(float(settings.request_delay_seconds), 0.5))
+                continue
+
             storage.update_candidate_meta(settings.collector_db, row["url"], meta)
 
             if not meta.get("valid"):
+                remember_username(
+                    settings.collector_db,
+                    row.get("username"),
+                    "rejected",
+                    reason=meta.get("description") or "not_public_channel_group_or_bot",
+                    title=meta.get("title"),
+                    type_value=meta.get("type"),
+                    count=meta.get("count"),
+                )
                 storage.set_candidate_status(
                     settings.collector_db,
                     int(row["id"]),
