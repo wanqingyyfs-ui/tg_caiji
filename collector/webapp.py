@@ -10,11 +10,14 @@ from fastapi.templating import Jinja2Templates
 
 from . import storage
 from .exporter import export_jsonl
+from .review_memory import bootstrap_from_candidates, ensure_review_memory, remember_candidate_ids
 from .settings import PROJECT_ROOT, get_settings, ensure_runtime_dirs
 
 settings = get_settings()
 ensure_runtime_dirs(settings)
 storage.init_db(settings.collector_db)
+ensure_review_memory(settings.collector_db)
+bootstrap_from_candidates(settings.collector_db)
 
 app = FastAPI(title="TG Suoyin Collector Admin")
 app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "collector" / "static")), name="static")
@@ -23,6 +26,14 @@ templates = Jinja2Templates(directory=str(PROJECT_ROOT / "collector" / "template
 
 def redirect(path: str) -> RedirectResponse:
     return RedirectResponse(path, status_code=303)
+
+
+def clean_status(value: str | None) -> str | None:
+    if value in {"new", "approved", "rejected", "exported"}:
+        return value
+    if value == "all":
+        return None
+    return "new"
 
 
 def candidates_url(page: int = 1, **filters: Any) -> str:
@@ -38,11 +49,12 @@ def candidates_url(page: int = 1, **filters: Any) -> str:
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    return redirect("/dashboard")
+    return redirect("/candidates")
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
+    bootstrap_from_candidates(settings.collector_db)
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
@@ -100,13 +112,16 @@ async def candidates_page(
     max_count: int | None = Query(default=None),
     min_confidence: float | None = Query(default=None),
     page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=20, le=200),
     msg: str | None = Query(default=None),
 ):
-    limit = 50
+    bootstrap_from_candidates(settings.collector_db)
+    current_status = clean_status(status)
+    limit = max(20, min(int(page_size), 200))
     offset = (page - 1) * limit
     rows, total = storage.list_candidates(
         settings.collector_db,
-        status=status or None,
+        status=current_status,
         type_value=type_value or None,
         q=q or None,
         min_count=min_count,
@@ -116,20 +131,22 @@ async def candidates_page(
         offset=offset,
     )
     filters = {
-        "status": status or "",
+        "status": current_status or "all",
         "type": type_value or "",
         "q": q or "",
         "min_count": min_count or "",
         "max_count": max_count or "",
         "min_confidence": min_confidence or "",
+        "page_size": limit,
     }
     url_filters = {
-        "status": status or None,
+        "status": current_status or "all",
         "type": type_value or None,
         "q": q or None,
         "min_count": min_count,
         "max_count": max_count,
         "min_confidence": min_confidence,
+        "page_size": limit,
     }
     return templates.TemplateResponse(
         request=request,
@@ -141,6 +158,7 @@ async def candidates_page(
             "limit": limit,
             "filters": filters,
             "message": msg or "",
+            "current_url": str(request.url),
             "prev_url": candidates_url(page - 1, **url_filters) if page > 1 else "",
             "next_url": candidates_url(page + 1, **url_filters) if page * limit < total else "",
         },
@@ -161,8 +179,12 @@ async def batch_candidates(request: Request):
     action = str(form.get("action") or "approve")
     status_map = {"approve": "approved", "reject": "rejected", "new": "new"}
     status = status_map.get(action, "approved")
+    if status in {"approved", "rejected"}:
+        remember_candidate_ids(settings.collector_db, ids, status)
     updated = storage.batch_set_status(settings.collector_db, ids, status)
-    return redirect(candidates_url(msg=f"批量操作完成：更新 {updated} 条"))
+    return_to = str(form.get("return_to") or "/candidates")
+    sep = "&" if "?" in return_to else "?"
+    return redirect(f"{return_to}{sep}msg=批量操作完成：更新 {updated} 条")
 
 
 @app.get("/candidates/{candidate_id}", response_class=HTMLResponse)
@@ -180,8 +202,10 @@ async def review_candidate(
     note: Annotated[str, Form()] = "",
     reject_reason: Annotated[str, Form()] = "",
 ):
+    if status in {"approved", "rejected"}:
+        remember_candidate_ids(settings.collector_db, [candidate_id], status, reject_reason or note or status)
     storage.set_candidate_status(settings.collector_db, candidate_id, status, note=note, reject_reason=reject_reason)
-    return redirect(f"/candidates/{candidate_id}")
+    return redirect("/candidates")
 
 
 @app.post("/export")
