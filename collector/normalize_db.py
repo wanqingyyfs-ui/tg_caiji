@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 
+from . import storage
 from .maintenance import clear_collected_candidates, normalize_database
 from .settings import ensure_runtime_dirs, get_settings
 
@@ -14,6 +15,7 @@ def main() -> None:
 
     settings = get_settings()
     ensure_runtime_dirs(settings)
+    storage.init_db(settings.collector_db)
 
     if args.clear:
         result = clear_collected_candidates(settings, include_sources=args.all)
