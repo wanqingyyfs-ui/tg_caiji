@@ -6,7 +6,7 @@ from telethon import events
 
 from . import storage
 from .extractor import extract_candidates
-from .resource_pipeline import process_candidate_link
+from .gate import handle_link
 from .safety import safe_snippet
 from .settings import Settings
 from .telegram_client import build_client
@@ -85,7 +85,7 @@ async def listen(
                 return
 
             for item in found:
-                result = process_candidate_link(
+                result = handle_link(
                     settings.collector_db,
                     item,
                     source_chat=source_name,
