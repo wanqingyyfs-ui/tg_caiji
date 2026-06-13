@@ -36,12 +36,17 @@ def _first_value(rows: list[sqlite3.Row], key: str) -> Any:
     return None
 
 
-def _resource_key(row: sqlite3.Row | dict[str, Any]) -> str:
+def _username_from_row(row: sqlite3.Row | dict[str, Any]) -> str | None:
     username = canonical_username(row["username"] if row["username"] else None)
     if not username and row["url"]:
         link = normalize_tg_link(str(row["url"]))
         if not link.rejected:
             username = link.username
+    return username
+
+
+def _resource_key(row: sqlite3.Row | dict[str, Any]) -> str:
+    username = _username_from_row(row)
     if username:
         return f"username:{username}"
     return f"url:{str(row['url']).strip().lower()}"
@@ -56,6 +61,64 @@ def _status_sort_value(row: sqlite3.Row) -> tuple[int, int, int, float, int]:
         -float(row["confidence"] or 0),
         int(row["id"]),
     )
+
+
+def _ensure_unique_indexes(conn: sqlite3.Connection) -> None:
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_candidates_url_lower_unique ON candidates(lower(url))")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_candidates_username_lower_unique ON candidates(lower(username)) WHERE username IS NOT NULL"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS rejected_resources (
+            username TEXT PRIMARY KEY,
+            url TEXT,
+            reason TEXT,
+            created_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_rejected_resources_seen ON rejected_resources(last_seen_at)")
+
+
+def _remember_rejected_username(conn: sqlite3.Connection, username: str | None, reason: str | None = None) -> None:
+    username = canonical_username(username)
+    if not username:
+        return
+    now = utc_now()
+    conn.execute(
+        """
+        INSERT INTO rejected_resources (username, url, reason, created_at, last_seen_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(username) DO UPDATE SET
+            reason=COALESCE(excluded.reason, rejected_resources.reason),
+            last_seen_at=excluded.last_seen_at
+        """,
+        (username, canonical_url_from_username(username), reason or "rejected", now, now),
+    )
+
+
+def _remember_existing_rejected_candidates(conn: sqlite3.Connection) -> None:
+    rows = conn.execute("SELECT username, url, reject_reason FROM candidates WHERE status='rejected'").fetchall()
+    for row in rows:
+        username = canonical_username(row["username"])
+        if not username and row["url"]:
+            link = normalize_tg_link(str(row["url"]))
+            if not link.rejected:
+                username = link.username
+        _remember_rejected_username(conn, username, row["reject_reason"] or "rejected")
+
+
+def _is_username_rejected(conn: sqlite3.Connection, username: str | None) -> bool:
+    username = canonical_username(username)
+    if not username:
+        return False
+    row = conn.execute("SELECT 1 FROM rejected_resources WHERE username=? LIMIT 1", (username,)).fetchone()
+    if row:
+        conn.execute("UPDATE rejected_resources SET last_seen_at=? WHERE username=?", (utc_now(), username))
+        return True
+    return False
 
 
 def cleanup_candidate_duplicates_conn(conn: sqlite3.Connection) -> dict[str, int]:
@@ -100,58 +163,29 @@ def cleanup_candidate_duplicates_conn(conn: sqlite3.Connection) -> dict[str, int
         conn.execute(
             """
             UPDATE candidates SET
-                url=?,
-                username=COALESCE(?, username),
-                name=COALESCE(?, name),
-                type_hint=COALESCE(?, type_hint),
-                source_chat=COALESCE(?, source_chat),
-                source_message_id=COALESCE(?, source_message_id),
-                source_message_date=COALESCE(?, source_message_date),
-                text_snippet=COALESCE(?, text_snippet),
-                confidence=?,
-                status=?,
-                reject_reason=COALESCE(?, reject_reason),
-                review_note=COALESCE(?, review_note),
-                title=COALESCE(?, title),
-                description=COALESCE(?, description),
-                type=COALESCE(?, type),
-                count=COALESCE(?, count),
-                telegram_id=COALESCE(?, telegram_id),
-                private=?,
-                valid=?,
-                first_seen_at=?,
-                last_seen_at=?,
-                enriched_at=COALESCE(?, enriched_at),
-                exported_at=COALESCE(?, exported_at)
+                url=?, username=COALESCE(?, username), name=COALESCE(?, name),
+                type_hint=COALESCE(?, type_hint), source_chat=COALESCE(?, source_chat),
+                source_message_id=COALESCE(?, source_message_id), source_message_date=COALESCE(?, source_message_date),
+                text_snippet=COALESCE(?, text_snippet), confidence=?, status=?,
+                reject_reason=COALESCE(?, reject_reason), review_note=COALESCE(?, review_note),
+                title=COALESCE(?, title), description=COALESCE(?, description), type=COALESCE(?, type),
+                count=COALESCE(?, count), telegram_id=COALESCE(?, telegram_id), private=?, valid=?,
+                first_seen_at=?, last_seen_at=?, enriched_at=COALESCE(?, enriched_at), exported_at=COALESCE(?, exported_at)
             WHERE id=?
             """,
             (
-                canonical_url,
-                username,
-                _first_value(sorted_rows, "name"),
-                _first_value(sorted_rows, "type_hint"),
-                _first_value(sorted_rows, "source_chat"),
-                _first_value(sorted_rows, "source_message_id"),
-                _first_value(sorted_rows, "source_message_date"),
-                _first_value(sorted_rows, "text_snippet"),
-                best_confidence,
-                survivor["status"],
-                _first_value(sorted_rows, "reject_reason"),
-                _first_value(sorted_rows, "review_note"),
-                _first_value(sorted_rows, "title"),
-                _first_value(sorted_rows, "description"),
-                _first_value(sorted_rows, "type"),
-                best_count,
-                _first_value(sorted_rows, "telegram_id"),
-                private,
-                valid,
-                first_seen,
-                last_seen,
-                _first_value(sorted_rows, "enriched_at"),
-                _first_value(sorted_rows, "exported_at"),
-                int(survivor["id"]),
+                canonical_url, username, _first_value(sorted_rows, "name"), _first_value(sorted_rows, "type_hint"),
+                _first_value(sorted_rows, "source_chat"), _first_value(sorted_rows, "source_message_id"),
+                _first_value(sorted_rows, "source_message_date"), _first_value(sorted_rows, "text_snippet"),
+                best_confidence, survivor["status"], _first_value(sorted_rows, "reject_reason"),
+                _first_value(sorted_rows, "review_note"), _first_value(sorted_rows, "title"),
+                _first_value(sorted_rows, "description"), _first_value(sorted_rows, "type"), best_count,
+                _first_value(sorted_rows, "telegram_id"), private, valid, first_seen, last_seen,
+                _first_value(sorted_rows, "enriched_at"), _first_value(sorted_rows, "exported_at"), int(survivor["id"]),
             ),
         )
+        if survivor["status"] == "rejected":
+            _remember_rejected_username(conn, username, _first_value(sorted_rows, "reject_reason") or "rejected")
         normalized += 1
 
     return {"groups": duplicate_groups, "removed": removed, "normalized": normalized}
@@ -159,16 +193,10 @@ def cleanup_candidate_duplicates_conn(conn: sqlite3.Connection) -> dict[str, int
 
 def cleanup_candidate_duplicates(db_path: Path) -> dict[str, int]:
     with connect(db_path) as conn:
-        result = cleanup_candidate_duplicates_conn(conn)
         _ensure_unique_indexes(conn)
+        result = cleanup_candidate_duplicates_conn(conn)
+        _remember_existing_rejected_candidates(conn)
         return result
-
-
-def _ensure_unique_indexes(conn: sqlite3.Connection) -> None:
-    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_candidates_url_lower_unique ON candidates(lower(url))")
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_candidates_username_lower_unique ON candidates(lower(username)) WHERE username IS NOT NULL"
-    )
 
 
 def init_db(db_path: Path) -> None:
@@ -231,8 +259,9 @@ def init_db(db_path: Path) -> None:
             );
             """
         )
-        cleanup_candidate_duplicates_conn(conn)
         _ensure_unique_indexes(conn)
+        cleanup_candidate_duplicates_conn(conn)
+        _remember_existing_rejected_candidates(conn)
 
 
 def upsert_source(db_path: Path, name: str, chat_ref: str, enabled: bool = True, backfill_limit: int = 500) -> int:
@@ -273,10 +302,7 @@ def get_source(db_path: Path, source_id: int) -> dict[str, Any] | None:
 
 def set_source_enabled(db_path: Path, source_id: int, enabled: bool) -> None:
     with connect(db_path) as conn:
-        conn.execute(
-            "UPDATE sources SET enabled=?, updated_at=? WHERE id=?",
-            (1 if enabled else 0, utc_now(), source_id),
-        )
+        conn.execute("UPDATE sources SET enabled=?, updated_at=? WHERE id=?", (1 if enabled else 0, utc_now(), source_id))
 
 
 def delete_source(db_path: Path, source_id: int) -> None:
@@ -286,10 +312,7 @@ def delete_source(db_path: Path, source_id: int) -> None:
 
 def update_source_error(db_path: Path, source_id: int, error: str | None) -> None:
     with connect(db_path) as conn:
-        conn.execute(
-            "UPDATE sources SET last_error=?, updated_at=? WHERE id=?",
-            (error, utc_now(), source_id),
-        )
+        conn.execute("UPDATE sources SET last_error=?, updated_at=? WHERE id=?", (error, utc_now(), source_id))
 
 
 def update_source_backfill(db_path: Path, source_id: int, last_message_id: int | None) -> None:
@@ -314,43 +337,37 @@ def upsert_candidate(db_path: Path, item: dict[str, Any]) -> int:
     confidence = float(item.get("confidence") or 0)
 
     with connect(db_path) as conn:
+        _ensure_unique_indexes(conn)
         existing = conn.execute(
             """
-            SELECT id FROM candidates
+            SELECT id, status FROM candidates
             WHERE lower(url)=lower(?) OR lower(username)=lower(?)
             ORDER BY id ASC
             LIMIT 1
             """,
             (url, username),
         ).fetchone()
+
+        if existing and existing["status"] == "rejected":
+            _remember_rejected_username(conn, username, "already_rejected")
+            return int(existing["id"])
+
+        if _is_username_rejected(conn, username):
+            return 0
+
         if existing:
             conn.execute(
                 """
                 UPDATE candidates SET
-                    url=?,
-                    username=COALESCE(?, username),
-                    name=COALESCE(?, name),
-                    type_hint=COALESCE(?, type_hint),
-                    source_chat=COALESCE(?, source_chat),
-                    source_message_id=COALESCE(?, source_message_id),
-                    source_message_date=COALESCE(?, source_message_date),
-                    text_snippet=COALESCE(?, text_snippet),
-                    confidence=MAX(confidence, ?),
-                    last_seen_at=?
+                    url=?, username=COALESCE(?, username), name=COALESCE(?, name), type_hint=COALESCE(?, type_hint),
+                    source_chat=COALESCE(?, source_chat), source_message_id=COALESCE(?, source_message_id),
+                    source_message_date=COALESCE(?, source_message_date), text_snippet=COALESCE(?, text_snippet),
+                    confidence=MAX(confidence, ?), last_seen_at=?
                 WHERE id=?
                 """,
                 (
-                    url,
-                    username,
-                    item.get("name"),
-                    type_hint,
-                    item.get("source_chat"),
-                    item.get("source_message_id"),
-                    item.get("source_message_date"),
-                    item.get("text_snippet"),
-                    confidence,
-                    now,
-                    int(existing["id"]),
+                    url, username, item.get("name"), type_hint, item.get("source_chat"), item.get("source_message_id"),
+                    item.get("source_message_date"), item.get("text_snippet"), confidence, now, int(existing["id"]),
                 ),
             )
             return int(existing["id"])
@@ -359,23 +376,13 @@ def upsert_candidate(db_path: Path, item: dict[str, Any]) -> int:
             """
             INSERT INTO candidates (
                 url, username, name, type_hint, source_chat, source_message_id,
-                source_message_date, text_snippet, confidence, status,
-                first_seen_at, last_seen_at
+                source_message_date, text_snippet, confidence, status, first_seen_at, last_seen_at
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?)
             """,
             (
-                url,
-                username,
-                item.get("name") or username,
-                type_hint,
-                item.get("source_chat"),
-                item.get("source_message_id"),
-                item.get("source_message_date"),
-                item.get("text_snippet"),
-                confidence,
-                now,
-                now,
+                url, username, item.get("name") or username, type_hint, item.get("source_chat"), item.get("source_message_id"),
+                item.get("source_message_date"), item.get("text_snippet"), confidence, now, now,
             ),
         )
         return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
@@ -394,41 +401,22 @@ def update_candidate_meta(db_path: Path, url: str, meta: dict[str, Any]) -> None
         conn.execute(
             """
             UPDATE candidates SET
-                url=COALESCE(?, url),
-                title=COALESCE(?, title),
-                description=COALESCE(?, description),
-                type=COALESCE(?, type),
-                type_hint=COALESCE(?, type_hint),
+                url=COALESCE(?, url), title=COALESCE(?, title), description=COALESCE(?, description),
+                type=COALESCE(?, type), type_hint=COALESCE(?, type_hint),
                 count=CASE
                     WHEN ? IS NULL THEN count
                     WHEN count IS NULL OR count=0 THEN ?
                     WHEN ? > count THEN ?
                     ELSE count
                 END,
-                telegram_id=COALESCE(?, telegram_id),
-                username=COALESCE(?, username),
-                valid=?,
-                private=?,
-                enriched_at=?
+                telegram_id=COALESCE(?, telegram_id), username=COALESCE(?, username),
+                valid=?, private=?, enriched_at=?
             WHERE lower(url)=lower(?) OR lower(username)=lower(?)
             """,
             (
-                canonical_url,
-                meta.get("title"),
-                meta.get("description"),
-                meta.get("type"),
-                meta.get("type"),
-                count_value,
-                count_value,
-                count_value,
-                count_value,
-                meta.get("telegram_id"),
-                username,
-                1 if meta.get("valid") else 0,
-                1 if meta.get("private") else 0,
-                utc_now(),
-                url,
-                username or "",
+                canonical_url, meta.get("title"), meta.get("description"), meta.get("type"), meta.get("type"),
+                count_value, count_value, count_value, count_value, meta.get("telegram_id"), username,
+                1 if meta.get("valid") else 0, 1 if meta.get("private") else 0, utc_now(), url, username or "",
             ),
         )
 
@@ -444,13 +432,13 @@ def set_candidate_status(db_path: Path, candidate_id: int, status: str, note: st
         raise ValueError(f"无效状态: {status}")
     with connect(db_path) as conn:
         conn.execute(
-            """
-            UPDATE candidates
-            SET status=?, review_note=?, reject_reason=?
-            WHERE id=?
-            """,
+            "UPDATE candidates SET status=?, review_note=?, reject_reason=? WHERE id=?",
             (status, note.strip(), reject_reason.strip(), candidate_id),
         )
+        if status == "rejected":
+            row = conn.execute("SELECT username, url, reject_reason FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+            if row:
+                _remember_rejected_username(conn, _username_from_row(row), row["reject_reason"] or "rejected")
 
 
 def batch_set_status(db_path: Path, ids: Iterable[int], status: str) -> int:
@@ -461,10 +449,11 @@ def batch_set_status(db_path: Path, ids: Iterable[int], status: str) -> int:
         return 0
     placeholders = ",".join("?" for _ in id_list)
     with connect(db_path) as conn:
-        cur = conn.execute(
-            f"UPDATE candidates SET status=? WHERE id IN ({placeholders})",
-            [status, *id_list],
-        )
+        if status == "rejected":
+            rows = conn.execute(f"SELECT username, url, reject_reason FROM candidates WHERE id IN ({placeholders})", id_list).fetchall()
+            for row in rows:
+                _remember_rejected_username(conn, _username_from_row(row), row["reject_reason"] or "rejected")
+        cur = conn.execute(f"UPDATE candidates SET status=? WHERE id IN ({placeholders})", [status, *id_list])
         return int(cur.rowcount or 0)
 
 
@@ -490,9 +479,7 @@ def list_candidates(
         params.extend([type_value, type_value])
     if q:
         like = f"%{q.strip()}%"
-        where.append(
-            "(url LIKE ? OR username LIKE ? OR name LIKE ? OR title LIKE ? OR description LIKE ? OR text_snippet LIKE ?)"
-        )
+        where.append("(url LIKE ? OR username LIKE ? OR name LIKE ? OR title LIKE ? OR description LIKE ? OR text_snippet LIKE ?)")
         params.extend([like, like, like, like, like, like])
     if min_count is not None:
         where.append("count IS NOT NULL AND count >= ?")
@@ -512,8 +499,7 @@ def list_candidates(
         total = int(conn.execute(f"SELECT COUNT(*) FROM candidates{where_sql}", params).fetchone()[0])
         rows = conn.execute(
             f"""
-            SELECT *
-            FROM candidates
+            SELECT * FROM candidates
             {where_sql}
             ORDER BY
                 CASE status
@@ -543,6 +529,7 @@ def stats(db_path: Path) -> dict[str, Any]:
         unknown_count = int(conn.execute("SELECT COUNT(*) FROM candidates WHERE count IS NULL").fetchone()[0])
         sources = int(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0])
         enabled_sources = int(conn.execute("SELECT COUNT(*) FROM sources WHERE enabled=1").fetchone()[0])
+        rejected_memory = int(conn.execute("SELECT COUNT(*) FROM rejected_resources").fetchone()[0])
         return {
             "total": total,
             "new": by_status.get("new", 0),
@@ -552,6 +539,7 @@ def stats(db_path: Path) -> dict[str, Any]:
             "unknown_count": unknown_count,
             "sources": sources,
             "enabled_sources": enabled_sources,
+            "rejected_memory": rejected_memory,
         }
 
 
@@ -561,11 +549,5 @@ def mark_exported(db_path: Path, ids: list[int], file_path: str, status: str) ->
     now = utc_now()
     placeholders = ",".join("?" for _ in ids)
     with connect(db_path) as conn:
-        conn.execute(
-            f"UPDATE candidates SET status='exported', exported_at=? WHERE id IN ({placeholders})",
-            [now, *ids],
-        )
-        conn.execute(
-            "INSERT INTO export_runs (file_path, status, total, created_at) VALUES (?, ?, ?, ?)",
-            (file_path, status, len(ids), now),
-        )
+        conn.execute(f"UPDATE candidates SET status='exported', exported_at=? WHERE id IN ({placeholders})", [now, *ids])
+        conn.execute("INSERT INTO export_runs (file_path, status, total, created_at) VALUES (?, ?, ?, ?)", (file_path, status, len(ids), now))
