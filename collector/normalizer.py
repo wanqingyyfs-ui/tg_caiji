@@ -30,6 +30,19 @@ class NormalizedLink:
     reject_reason: str = ""
 
 
+def canonical_username(username: str | None) -> str | None:
+    value = (username or "").strip().lstrip("@")
+    if not value:
+        return None
+    if not USERNAME_RE.match(value):
+        return None
+    return value.lower()
+
+
+def canonical_url_from_username(username: str) -> str:
+    return f"https://t.me/{username.lower()}"
+
+
 def clean_raw_link(value: str) -> str:
     value = (value or "").strip()
     value = value.strip(" \t\r\n<>[](){}'\"“”‘’，。；;、")
@@ -49,9 +62,9 @@ def normalize_tg_link(raw: str) -> NormalizedLink:
         return NormalizedLink("", "", True, "空链接")
 
     if value.startswith("@"):
-        username = value[1:].strip()
-        if USERNAME_RE.match(username):
-            return NormalizedLink(f"https://t.me/{username}", username)
+        username = canonical_username(value[1:])
+        if username:
+            return NormalizedLink(canonical_url_from_username(username), username)
         return NormalizedLink("", "", True, "无效 @username")
 
     parsed = urlparse(value)
@@ -68,19 +81,21 @@ def normalize_tg_link(raw: str) -> NormalizedLink:
         return NormalizedLink("", "", True, "缺少 username")
 
     if parts[0] == "s" and len(parts) >= 2:
-        username = parts[1]
+        raw_username = parts[1]
     else:
-        username = parts[0]
+        raw_username = parts[0]
 
-    first_lower = username.lower()
-    if username.startswith("+"):
+    first_lower = raw_username.lower()
+    if raw_username.startswith("+"):
         return NormalizedLink("", "", True, "私密邀请链接")
     if first_lower in REJECTED_FIRST_SEGMENTS:
-        return NormalizedLink("", "", True, f"不支持的 Telegram 链接类型: {username}")
-    if not USERNAME_RE.match(username):
+        return NormalizedLink("", "", True, f"不支持的 Telegram 链接类型: {raw_username}")
+
+    username = canonical_username(raw_username)
+    if not username:
         return NormalizedLink("", "", True, "无效 username")
 
-    return NormalizedLink(f"https://t.me/{username}", username)
+    return NormalizedLink(canonical_url_from_username(username), username)
 
 
 def normalize_type_hint(value: str | None) -> str | None:
