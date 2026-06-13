@@ -102,7 +102,7 @@ async def supervise(args: argparse.Namespace) -> None:
         await asyncio.sleep(2)
         webbrowser.open(f"http://{args.host}:{args.port}/candidates")
 
-    if args.telegram_listener:
+    if not args.no_telegram_listener:
         processes.append(
             start_process(
                 "Telegram 登录监听",
@@ -114,8 +114,9 @@ async def supervise(args: argparse.Namespace) -> None:
                 ),
             )
         )
+        print("Telegram 登录账号只用于读取监听源消息；候选资源类型和人数只用公开网页解析。", flush=True)
     else:
-        print("默认没有启动 Telegram 登录监听；候选链接人数和类型只用公开网页 enrich。", flush=True)
+        print("已按参数跳过 Telegram 登录监听；仅运行 Web 和公开页 enrich。", flush=True)
 
     enrich_task = None
     if not args.no_enrich:
@@ -141,11 +142,11 @@ async def supervise(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Start web and public-page enrichment together")
+    parser = argparse.ArgumentParser(description="Start web, Telegram listener, and public-page enrichment together")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8008)
     parser.add_argument("--open-browser", action="store_true")
-    parser.add_argument("--telegram-listener", action="store_true", help="需要实时读取 Telegram 消息时才启用，会使用登录账号")
+    parser.add_argument("--no-telegram-listener", action="store_true", help="不启动登录账号监听，只运行 Web 和公开页 enrich")
     parser.add_argument("--no-enrich", action="store_true")
     parser.add_argument("--no-mentions", action="store_true")
     parser.add_argument("--debug", action="store_true")
