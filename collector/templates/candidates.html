@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}候选资源 - TG Suoyin Collector{% endblock %}
 {% block content %}
+<meta http-equiv="refresh" content="8">
 <h1>候选资源</h1>
 
 {% if message %}
@@ -13,8 +14,8 @@
   <form method="get" action="/candidates" class="filters">
     <label>状态
       <select name="status">
-        <option value="" {% if not filters.status %}selected{% endif %}>全部</option>
         <option value="new" {% if filters.status == "new" %}selected{% endif %}>待审核</option>
+        <option value="all" {% if filters.status == "all" %}selected{% endif %}>全部记录</option>
         <option value="approved" {% if filters.status == "approved" %}selected{% endif %}>已通过</option>
         <option value="rejected" {% if filters.status == "rejected" %}selected{% endif %}>已拒绝</option>
         <option value="exported" {% if filters.status == "exported" %}selected{% endif %}>已导出</option>
@@ -22,10 +23,17 @@
     </label>
     <label>类型
       <select name="type">
-        <option value="" {% if not filters.type %}selected{% endif %}>全部</option>
+        <option value="" {% if not filters.type %}selected{% endif %}>全部类型</option>
         <option value="channel" {% if filters.type == "channel" %}selected{% endif %}>频道</option>
         <option value="group" {% if filters.type == "group" %}selected{% endif %}>群组</option>
         <option value="bot" {% if filters.type == "bot" %}selected{% endif %}>机器人</option>
+      </select>
+    </label>
+    <label>每页
+      <select name="page_size">
+        <option value="50" {% if filters.page_size == 50 %}selected{% endif %}>50</option>
+        <option value="100" {% if filters.page_size == 100 %}selected{% endif %}>100</option>
+        <option value="200" {% if filters.page_size == 200 %}selected{% endif %}>200</option>
       </select>
     </label>
     <label>最低人数
@@ -41,16 +49,17 @@
       <input name="q" value="{{ filters.q }}" placeholder="电影、科技、资源、简介关键词">
     </label>
     <button type="submit">筛选</button>
-    <a class="button secondary" href="/candidates">重置</a>
+    <a class="button secondary" href="/candidates">只看待审核</a>
   </form>
 </section>
 
 <section class="panel">
   <div class="toolbar">
-    <strong>共 {{ total }} 条</strong>
-    <span class="muted">人数为 “-” 表示公开页没有显示人数。</span>
+    <strong>当前筛选共 {{ total }} 条；本页 {{ items|length }} 条</strong>
+    <span class="muted">页面每 8 秒自动刷新。已通过/已拒绝不会再出现在默认候选列表。</span>
   </div>
   <form method="post" action="/candidates/batch">
+    <input type="hidden" name="return_to" value="{{ current_url }}">
     <div class="batch-actions">
       <button name="action" value="approve" type="submit">批量通过</button>
       <button name="action" value="reject" type="submit" class="danger">批量拒绝</button>
@@ -85,6 +94,9 @@
           <td class="desc">{{ item.description or item.text_snippet or "" }}</td>
         </tr>
       {% endfor %}
+      {% if not items %}
+        <tr><td colspan="8">当前没有待审核候选。</td></tr>
+      {% endif %}
       </tbody>
     </table>
   </form>
@@ -93,7 +105,7 @@
     {% if prev_url %}
       <a href="{{ prev_url }}">上一页</a>
     {% endif %}
-    <span>第 {{ page }} 页</span>
+    <span>第 {{ page }} 页，每页 {{ limit }} 条</span>
     {% if next_url %}
       <a href="{{ next_url }}">下一页</a>
     {% endif %}
