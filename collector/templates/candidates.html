@@ -71,7 +71,7 @@
             <a href="{{ item.url }}" target="_blank">{{ item.url }}</a>
           </td>
           <td>{{ item.type or item.type_hint or "-" }}</td>
-          <td>{{ item.count or 0 }}</td>
+          <td>{% if item.count is not none and item.count > 0 %}{{ item.count }}{% else %}-{% endif %}</td>
           <td>{{ "%.2f"|format(item.confidence or 0) }}</td>
           <td><span class="status status-{{ item.status }}">{{ item.status }}</span></td>
           <td>{{ item.source_chat or "-" }}</td>
