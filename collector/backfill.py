@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from . import storage
 from .extractor import extract_candidates
-from .resource_pipeline import process_candidate_link
+from .gate import handle_link
 from .settings import Settings
 from .telegram_client import build_client
 
@@ -35,7 +35,7 @@ async def backfill(settings: Settings, limit: int | None = None, include_mention
                     continue
                 max_message_id = max(max_message_id or 0, int(message.id))
                 for item in items:
-                    result = process_candidate_link(
+                    result = handle_link(
                         settings.collector_db,
                         item,
                         source_chat=source["name"],
@@ -45,7 +45,7 @@ async def backfill(settings: Settings, limit: int | None = None, include_mention
                     )
                     if result.action == "candidate":
                         total_candidates += 1
-                    elif result.action == "skip_reviewed":
+                    elif result.reason in {"approved", "rejected", "exported", "reviewed"}:
                         skipped_reviewed += 1
                     else:
                         skipped_invalid += 1
