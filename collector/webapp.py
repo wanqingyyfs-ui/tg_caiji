@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -22,6 +23,17 @@ templates = Jinja2Templates(directory=str(PROJECT_ROOT / "collector" / "template
 
 def redirect(path: str) -> RedirectResponse:
     return RedirectResponse(path, status_code=303)
+
+
+def candidates_url(page: int = 1, **filters: Any) -> str:
+    params: dict[str, str | int | float] = {"page": max(1, int(page))}
+    for key, value in filters.items():
+        if value is None or value == "":
+            continue
+        params[key] = value
+    if params == {"page": 1}:
+        return "/candidates"
+    return "/candidates?" + urlencode(params)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -88,6 +100,7 @@ async def candidates_page(
     max_count: int | None = Query(default=None),
     min_confidence: float | None = Query(default=None),
     page: int = Query(default=1, ge=1),
+    msg: str | None = Query(default=None),
 ):
     limit = 50
     offset = (page - 1) * limit
@@ -102,6 +115,22 @@ async def candidates_page(
         limit=limit,
         offset=offset,
     )
+    filters = {
+        "status": status or "",
+        "type": type_value or "",
+        "q": q or "",
+        "min_count": min_count or "",
+        "max_count": max_count or "",
+        "min_confidence": min_confidence or "",
+    }
+    url_filters = {
+        "status": status or None,
+        "type": type_value or None,
+        "q": q or None,
+        "min_count": min_count,
+        "max_count": max_count,
+        "min_confidence": min_confidence,
+    }
     return templates.TemplateResponse(
         request=request,
         name="candidates.html",
@@ -110,26 +139,30 @@ async def candidates_page(
             "total": total,
             "page": page,
             "limit": limit,
-            "filters": {
-                "status": status or "",
-                "type": type_value or "",
-                "q": q or "",
-                "min_count": min_count or "",
-                "max_count": max_count or "",
-                "min_confidence": min_confidence or "",
-            },
+            "filters": filters,
+            "message": msg or "",
+            "prev_url": candidates_url(page - 1, **url_filters) if page > 1 else "",
+            "next_url": candidates_url(page + 1, **url_filters) if page * limit < total else "",
         },
     )
 
 
 @app.post("/candidates/batch")
-async def batch_candidates(
-    ids: Annotated[list[int] | None, Form()] = None,
-    action: Annotated[str, Form()] = "approve",
-):
+async def batch_candidates(request: Request):
+    form = await request.form()
+    raw_ids = form.getlist("ids")
+    ids: list[int] = []
+    for raw_id in raw_ids:
+        try:
+            ids.append(int(str(raw_id)))
+        except ValueError:
+            continue
+
+    action = str(form.get("action") or "approve")
     status_map = {"approve": "approved", "reject": "rejected", "new": "new"}
-    storage.batch_set_status(settings.collector_db, ids or [], status_map.get(action, "new"))
-    return redirect("/candidates")
+    status = status_map.get(action, "approved")
+    updated = storage.batch_set_status(settings.collector_db, ids, status)
+    return redirect(candidates_url(msg=f"批量操作完成：更新 {updated} 条"))
 
 
 @app.get("/candidates/{candidate_id}", response_class=HTMLResponse)
