@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 from telethon import events
 
@@ -102,5 +103,5 @@ async def listen(
             print("调试模式已开启：即使消息里没有链接，也会打印收到消息的记录。")
         try:
             await client.run_until_disconnected()
-        except (KeyboardInterrupt, asyncio.CancelledError):  # type: ignore[name-defined]
+        except (KeyboardInterrupt, asyncio.CancelledError):
             print("监听已停止。")
