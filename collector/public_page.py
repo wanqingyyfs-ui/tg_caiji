@@ -20,6 +20,7 @@ class PublicPageMeta:
     description: str | None = None
     count: int | None = None
     type_hint: str | None = None
+    fetched: bool = False
 
 
 def _strip_tags(value: str) -> str:
@@ -75,7 +76,7 @@ def fetch_public_page_meta(username: str, timeout: float = 10.0) -> PublicPageMe
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             text = resp.read().decode("utf-8", errors="ignore")
     except Exception:
-        return PublicPageMeta()
+        return PublicPageMeta(fetched=False)
 
     title = None
     desc = None
@@ -97,4 +98,4 @@ def fetch_public_page_meta(username: str, timeout: float = 10.0) -> PublicPageMe
     if count is None:
         count, type_hint = _count_and_type_from_text(text)
 
-    return PublicPageMeta(title=title, description=desc, count=count, type_hint=type_hint)
+    return PublicPageMeta(title=title, description=desc, count=count, type_hint=type_hint, fetched=True)
