@@ -12,12 +12,12 @@ from .settings import Settings
 from .telegram_client import build_client
 
 
-def _entity_name(entity: Any) -> str:
+def _entity_name(entity: Any, fallback: str = "unknown") -> str:
     return (
         getattr(entity, "title", None)
         or getattr(entity, "username", None)
         or getattr(entity, "first_name", None)
-        or str(getattr(entity, "id", "unknown"))
+        or str(getattr(entity, "channel_id", None) or getattr(entity, "chat_id", None) or getattr(entity, "user_id", None) or getattr(entity, "id", None) or fallback)
     )
 
 
@@ -25,10 +25,10 @@ async def _resolve_enabled_sources(client, settings: Settings) -> list[tuple[dic
     resolved = []
     for source in storage.list_sources(settings.collector_db, enabled=True):
         try:
-            entity = await client.get_entity(source["chat_ref"])
+            entity = await client.get_input_entity(source["chat_ref"])
             resolved.append((source, entity))
             storage.update_source_error(settings.collector_db, int(source["id"]), None)
-            print(f"监听源解析成功：{source['name']} -> {_entity_name(entity)} / id={getattr(entity, 'id', '')}")
+            print(f"监听源解析成功：{source['name']} -> {_entity_name(entity, source['chat_ref'])}")
         except Exception as exc:
             storage.update_source_error(settings.collector_db, int(source["id"]), str(exc))
             print(f"监听源解析失败：{source['name']} / {source['chat_ref']} / {exc}")
