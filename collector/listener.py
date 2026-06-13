@@ -6,6 +6,7 @@ from telethon import events
 
 from . import storage
 from .extractor import extract_candidates
+from .resource_pipeline import process_candidate_link
 from .safety import safe_snippet
 from .settings import Settings
 from .telegram_client import build_client
@@ -48,7 +49,9 @@ async def listen(
         result = await backfill(settings, limit=backfill_limit, include_mentions=include_mentions)
         print(
             "启动回补完成："
-            f"sources={result['sources']} messages={result['messages']} candidates={result['candidates']}"
+            f"sources={result['sources']} messages={result['messages']} "
+            f"candidates={result['candidates']} skipped_reviewed={result.get('skipped_reviewed', 0)} "
+            f"skipped_invalid={result.get('skipped_invalid', 0)}"
         )
 
     client = build_client(settings)
@@ -63,7 +66,7 @@ async def listen(
         @client.on(events.NewMessage(chats=chats))
         async def handler(event):
             text = event.raw_text or ""
-            candidates = extract_candidates(text, include_mentions=include_mentions)
+            found = extract_candidates(text, include_mentions=include_mentions)
 
             try:
                 chat = await event.get_chat()
@@ -75,32 +78,33 @@ async def listen(
                 text_preview = safe_snippet(text, max_len=120)
                 print(
                     f"收到消息：chat={source_name} message_id={event.message.id} "
-                    f"links={len(candidates)} text={text_preview}"
+                    f"links={len(found)} text={text_preview}"
                 )
 
-            if not candidates:
+            if not found:
                 return
 
-            for item in candidates:
-                candidate_id = storage.upsert_candidate(
+            for item in found:
+                result = process_candidate_link(
                     settings.collector_db,
-                    {
-                        "url": item.url,
-                        "username": item.username,
-                        "name": item.username,
-                        "type_hint": item.type_hint,
-                        "source_chat": source_name,
-                        "source_message_id": event.message.id,
-                        "source_message_date": event.message.date.isoformat() if event.message.date else None,
-                        "text_snippet": safe_snippet(text),
-                        "confidence": item.confidence,
-                    },
+                    item,
+                    source_chat=source_name,
+                    source_message_id=event.message.id,
+                    source_message_date=event.message.date.isoformat() if event.message.date else None,
+                    text=text,
                 )
-                print(f"发现候选资源：id={candidate_id} url={item.url} type={item.type_hint or '-'} score={item.confidence:.2f}")
+                if result.action == "candidate":
+                    count_text = result.count if result.count is not None else "-"
+                    print(
+                        f"新增候选资源：id={result.candidate_id} url={result.url} "
+                        f"type={result.type_hint or '-'} count={count_text}"
+                    )
+                elif debug:
+                    print(f"跳过资源：url={result.url} action={result.action} reason={result.reason}")
 
         print(f"正在监听 {len(chats)} 个来源。include_mentions={include_mentions}。按 Ctrl+C 停止。")
         if debug:
-            print("调试模式已开启：即使消息里没有链接，也会打印收到消息的记录。")
+            print("调试模式已开启：会打印收到消息、跳过原因和新增候选。")
         try:
             await client.run_until_disconnected()
         except (KeyboardInterrupt, asyncio.CancelledError):
