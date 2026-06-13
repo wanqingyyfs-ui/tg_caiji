@@ -9,6 +9,7 @@ from telethon.tl.types import Channel, Chat, User
 
 from . import storage
 from .normalizer import canonical_username
+from .public_page import fetch_public_page_meta
 from .settings import Settings
 from .telegram_client import build_client
 
@@ -56,6 +57,7 @@ def best_title(entity: Any, fallback: str) -> str:
 async def fetch_meta_for_username(client, username: str) -> dict[str, Any]:
     username = canonical_username(username) or username.strip().lstrip("@").lower()
     meta: dict[str, Any] = {"valid": False, "private": False, "username": username, "count": None}
+    public_meta = fetch_public_page_meta(username)
     try:
         entity = await client.get_entity(username)
         detected_type = type_from_entity(entity)
@@ -90,11 +92,19 @@ async def fetch_meta_for_username(client, username: str) -> dict[str, Any]:
                 count = first_positive_int(
                     getattr(full_chat, "participants_count", None),
                     getattr(full_chat, "members_count", None),
-                    getattr(full_chat, "online_count", None),
                     count,
                 )
             except RPCError as exc:
                 description = description or f"GetFullChannel failed: {exc.__class__.__name__}"
+
+        if not count and public_meta.count:
+            count = public_meta.count
+        if not description and public_meta.description:
+            description = public_meta.description
+        if public_meta.type_hint and not detected_type:
+            detected_type = public_meta.type_hint
+        if public_meta.title and (not title or title == username):
+            title = public_meta.title
 
         meta.update(
             {
@@ -111,9 +121,35 @@ async def fetch_meta_for_username(client, username: str) -> dict[str, Any]:
     except FloodWaitError:
         raise
     except ValueError as exc:
-        meta.update({"valid": False, "private": True, "description": str(exc)})
+        if public_meta.count or public_meta.type_hint:
+            meta.update(
+                {
+                    "valid": True,
+                    "private": False,
+                    "title": public_meta.title or username,
+                    "description": public_meta.description,
+                    "type": public_meta.type_hint,
+                    "count": public_meta.count,
+                    "username": username,
+                }
+            )
+        else:
+            meta.update({"valid": False, "private": True, "description": str(exc)})
     except RPCError as exc:
-        meta.update({"valid": False, "description": f"{exc.__class__.__name__}: {exc}"})
+        if public_meta.count or public_meta.type_hint:
+            meta.update(
+                {
+                    "valid": True,
+                    "private": False,
+                    "title": public_meta.title or username,
+                    "description": public_meta.description,
+                    "type": public_meta.type_hint,
+                    "count": public_meta.count,
+                    "username": username,
+                }
+            )
+        else:
+            meta.update({"valid": False, "description": f"{exc.__class__.__name__}: {exc}"})
     return meta
 
 
@@ -156,7 +192,7 @@ async def enrich_pending(settings: Settings, limit: int = 100, force: bool = Fal
                         with_count += 1
                         print(f"已补充人数：{row['username']} -> {meta['count']}")
                     else:
-                        print(f"人数未知：{row['username']}，已补充标题/类型但 Telegram 未返回人数")
+                        print(f"人数未知：{row['username']}，API 和公开页都没有返回人数")
             except FloodWaitError as exc:
                 wait_seconds = min(int(exc.seconds), 60)
                 print(f"触发 FloodWait，等待 {wait_seconds} 秒后继续")
