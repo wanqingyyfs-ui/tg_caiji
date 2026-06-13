@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from . import storage
 from .extractor import extract_candidates
-from .safety import safe_snippet
+from .resource_pipeline import process_candidate_link
 from .settings import Settings
 from .telegram_client import build_client
 
@@ -11,6 +11,8 @@ async def backfill(settings: Settings, limit: int | None = None, include_mention
     client = build_client(settings)
     total_messages = 0
     total_candidates = 0
+    skipped_reviewed = 0
+    skipped_invalid = 0
     sources_done = 0
 
     async with client:
@@ -33,23 +35,28 @@ async def backfill(settings: Settings, limit: int | None = None, include_mention
                     continue
                 max_message_id = max(max_message_id or 0, int(message.id))
                 for item in items:
-                    storage.upsert_candidate(
+                    result = process_candidate_link(
                         settings.collector_db,
-                        {
-                            "url": item.url,
-                            "username": item.username,
-                            "name": item.username,
-                            "type_hint": item.type_hint,
-                            "source_chat": source["name"],
-                            "source_message_id": message.id,
-                            "source_message_date": message.date.isoformat() if message.date else None,
-                            "text_snippet": safe_snippet(text),
-                            "confidence": item.confidence,
-                        },
+                        item,
+                        source_chat=source["name"],
+                        source_message_id=message.id,
+                        source_message_date=message.date.isoformat() if message.date else None,
+                        text=text,
                     )
-                    total_candidates += 1
+                    if result.action == "candidate":
+                        total_candidates += 1
+                    elif result.action == "skip_reviewed":
+                        skipped_reviewed += 1
+                    else:
+                        skipped_invalid += 1
 
             storage.update_source_backfill(settings.collector_db, int(source["id"]), max_message_id)
             sources_done += 1
 
-    return {"sources": sources_done, "messages": total_messages, "candidates": total_candidates}
+    return {
+        "sources": sources_done,
+        "messages": total_messages,
+        "candidates": total_candidates,
+        "skipped_reviewed": skipped_reviewed,
+        "skipped_invalid": skipped_invalid,
+    }
