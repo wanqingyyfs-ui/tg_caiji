@@ -1,8 +1,8 @@
-# TG Suoyin Collector
+# TG 采集器
 
-`tg_suoyin_collector` 是 `tg_suoyin` 的配套采集项目。
+`tg_caiji` 是 `tg_suoyin` 的配套采集项目。
 
-它使用 Telegram 用户号通过 Telethon 监听你指定的群组/频道，从消息中发现公开 `t.me/username` 资源链接，保存到本地 SQLite，然后通过 Web 审核面板筛选、审核、导出为 `tg_suoyin` 可直接导入的 JSONL 文件。
+它使用 Telegram 用户号通过 Telethon 监听你指定的群组/频道，从消息中发现公开 `t.me/username` 或 `@username` 资源链接，保存到本地 SQLite，然后通过 Web 审核面板筛选、审核、导出为 `tg_suoyin` 可直接导入的 JSONL 文件。
 
 ## 项目定位
 
@@ -25,7 +25,7 @@
 推荐数据链路：
 
 ```text
-tg_suoyin_collector
+tg_caiji
     ↓ exports/tg_suoyin_links.jsonl
 tg_suoyin/scripts/import_collected_links.py
     ↓ data/rectg.db links 表
@@ -49,8 +49,8 @@ tg_suoyin/scripts/rebuild_index.py
 
 ```powershell
 cd D:\编程
-git clone https://github.com/wanqingyyfs-ui/tg_suoyin_collector.git
-cd tg_suoyin_collector
+git clone https://github.com/wanqingyyfs-ui/tg_caiji.git
+cd tg_caiji
 
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -124,21 +124,55 @@ copy config\sources.example.yaml config\sources.yaml
 python -m collector.main import-sources --file config/sources.yaml
 ```
 
+## 诊断监听源
+
+添加监听源后，先运行：
+
+```powershell
+python -m collector.main doctor --limit 30
+```
+
+它会检查：
+
+- 监听源是否启用
+- 当前 Telegram 用户号是否能访问该群/频道
+- 最近消息是否能读取
+- 最近消息里是否有可采集的 `t.me/username` 或 `@username`
+
+如果这里显示候选链接为 0，说明最近抽样消息里没有公开资源链接，或者来源写错、用户号没权限访问。
+
 ## 回补历史消息
 
 ```powershell
 python -m collector.main backfill --limit 500
 ```
 
-这会读取每个已启用监听源最近 500 条消息，提取里面的公开 Telegram 链接。
+默认会识别 `t.me/username` 和 `@username`。如果只想识别完整链接，不识别 `@username`：
+
+```powershell
+python -m collector.main backfill --limit 500 --no-mentions
+```
 
 ## 实时监听
+
+推荐命令：
+
+```powershell
+python -m collector.main listen --backfill-on-start --backfill-limit 200 --debug
+```
+
+说明：
+
+- `listen` 只监听未来新消息。
+- `--backfill-on-start` 会在监听前先回补一批历史消息，避免刚启动时面板为空。
+- `--debug` 会打印每条收到的消息，即使没有链接也会显示，方便判断到底有没有监听到消息。
+- 默认识别 `@username`；如果不想识别，添加 `--no-mentions`。
+
+普通后台监听：
 
 ```powershell
 python -m collector.main listen
 ```
-
-只监听你在面板中启用的群组/频道。
 
 ## 补充资源元信息
 
@@ -194,7 +228,7 @@ python -m collector.main export --status approved --output exports/tg_suoyin_lin
 ```powershell
 cd D:\编程\tg_suoyin
 
-python scripts/import_collected_links.py --file D:\编程\tg_suoyin_collector\exports\tg_suoyin_links.jsonl
+python scripts/import_collected_links.py --file D:\编程\tg_caiji\exports\tg_suoyin_links.jsonl
 
 python scripts/crawl.py --new
 
@@ -223,8 +257,9 @@ npm run build
 python -m collector.main init-db
 python -m collector.main login
 python -m collector.main add-source --name "资源群" --chat "@example_group"
+python -m collector.main doctor --limit 30
 python -m collector.main backfill --limit 500
-python -m collector.main listen
+python -m collector.main listen --backfill-on-start --backfill-limit 200 --debug
 python -m collector.main enrich --limit 100
 python -m collector.main web
 python -m collector.main export --status approved
