@@ -42,6 +42,9 @@ def handle_link(
         return GateResult("ignored", username, url, status)
 
     meta = fetch_public_page_meta(username)
+    if not meta.fetched:
+        return GateResult("ignored", username, url, "page_unreachable")
+
     if meta.type_hint not in RESOURCE_TYPES:
         remember_username(
             db_path,
