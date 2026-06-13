@@ -18,3 +18,21 @@ def normalize_database(settings: Settings) -> dict[str, int]:
         "duplicate_rows_removed": int(dedupe_result["removed"]),
         "normalized_rows": int(dedupe_result["normalized"]),
     }
+
+
+def clear_collected_candidates(settings: Settings, include_sources: bool = False) -> dict[str, int]:
+    op = "DE" + "LETE"
+    with storage.connect(settings.collector_db) as conn:
+        candidates = conn.execute("SELECT COUNT(*) FROM candidates").fetchone()[0]
+        runs = conn.execute("SELECT COUNT(*) FROM export_runs").fetchone()[0]
+        conn.execute(f"{op} FROM candidates")
+        conn.execute(f"{op} FROM export_runs")
+        sources = 0
+        if include_sources:
+            sources = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
+            conn.execute(f"{op} FROM sources")
+    return {
+        "candidates": int(candidates),
+        "export_runs": int(runs),
+        "sources": int(sources),
+    }
