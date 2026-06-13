@@ -3,6 +3,12 @@
 {% block content %}
 <h1>候选资源</h1>
 
+{% if message %}
+<section class="panel">
+  <strong>{{ message }}</strong>
+</section>
+{% endif %}
+
 <section class="panel">
   <form method="get" action="/candidates" class="filters">
     <label>状态
@@ -42,6 +48,7 @@
 <section class="panel">
   <div class="toolbar">
     <strong>共 {{ total }} 条</strong>
+    <span class="muted">人数为 “-” 表示公开页没有显示人数。</span>
   </div>
   <form method="post" action="/candidates/batch">
     <div class="batch-actions">
@@ -83,12 +90,12 @@
   </form>
 
   <div class="pagination">
-    {% if page > 1 %}
-      <a href="/candidates?page={{ page - 1 }}&status={{ filters.status }}&type={{ filters.type }}&q={{ filters.q }}&min_count={{ filters.min_count }}&max_count={{ filters.max_count }}&min_confidence={{ filters.min_confidence }}">上一页</a>
+    {% if prev_url %}
+      <a href="{{ prev_url }}">上一页</a>
     {% endif %}
     <span>第 {{ page }} 页</span>
-    {% if page * limit < total %}
-      <a href="/candidates?page={{ page + 1 }}&status={{ filters.status }}&type={{ filters.type }}&q={{ filters.q }}&min_count={{ filters.min_count }}&max_count={{ filters.max_count }}&min_confidence={{ filters.min_confidence }}">下一页</a>
+    {% if next_url %}
+      <a href="{{ next_url }}">下一页</a>
     {% endif %}
   </div>
 </section>
