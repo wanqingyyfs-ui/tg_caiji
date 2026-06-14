@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from urllib.parse import urlparse
 
 USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{4,31}$")
+MESSAGE_ID_RE = re.compile(r"^[0-9]+$")
 
 REJECTED_FIRST_SEGMENTS = {
     "+",
@@ -56,6 +57,36 @@ def clean_raw_link(value: str) -> str:
     return value
 
 
+def username_from_path_parts(parts: list[str]) -> str | None:
+    """Return public username from Telegram paths.
+
+    Supported examples:
+    - /username
+    - /username/1190
+    - /username/1190?single
+    - /s/username
+    - /s/username/1190
+
+    Unsupported examples are intentionally rejected elsewhere:
+    - /c/123456/789 private/internal channel links
+    - /+invite private invite links
+    - /joinchat/... private invite links
+    """
+    if not parts:
+        return None
+    if parts[0].lower() == "s" and len(parts) >= 2:
+        return parts[1]
+    return parts[0]
+
+
+def is_message_link(path_parts: list[str]) -> bool:
+    if len(path_parts) >= 2 and MESSAGE_ID_RE.match(path_parts[1]):
+        return True
+    if len(path_parts) >= 3 and path_parts[0].lower() == "s" and MESSAGE_ID_RE.match(path_parts[2]):
+        return True
+    return False
+
+
 def normalize_tg_link(raw: str) -> NormalizedLink:
     value = clean_raw_link(raw)
     if not value:
@@ -80,10 +111,9 @@ def normalize_tg_link(raw: str) -> NormalizedLink:
     if not parts:
         return NormalizedLink("", "", True, "缺少 username")
 
-    if parts[0] == "s" and len(parts) >= 2:
-        raw_username = parts[1]
-    else:
-        raw_username = parts[0]
+    raw_username = username_from_path_parts(parts)
+    if not raw_username:
+        return NormalizedLink("", "", True, "缺少 username")
 
     first_lower = raw_username.lower()
     if raw_username.startswith("+"):
