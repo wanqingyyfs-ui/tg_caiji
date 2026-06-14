@@ -4,6 +4,7 @@ from . import storage
 from .extractor import extract_candidates
 from .gate import handle_link
 from .settings import Settings
+from .source_resolver import build_dialog_username_map, resolve_source_from_dialogs
 from .telegram_client import build_client
 
 
@@ -17,14 +18,16 @@ async def backfill(settings: Settings, limit: int | None = None, include_mention
 
     async with client:
         sources = storage.list_sources(settings.collector_db, enabled=True)
+        dialog_map = await build_dialog_username_map(client)
         for source in sources:
             current_limit = int(limit or source.get("backfill_limit") or 500)
             max_message_id = None
             try:
-                entity = await client.get_input_entity(source["chat_ref"])
+                entity = await resolve_source_from_dialogs(client, source["chat_ref"], dialog_map)
                 storage.update_source_error(settings.collector_db, int(source["id"]), None)
             except Exception as exc:
                 storage.update_source_error(settings.collector_db, int(source["id"]), str(exc))
+                print(f"回补源跳过：{source['name']} / {source['chat_ref']} / {exc}")
                 continue
 
             async for message in client.iter_messages(entity, limit=current_limit):
