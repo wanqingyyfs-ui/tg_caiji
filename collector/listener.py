@@ -58,7 +58,7 @@ async def listen(
         print(
             "启动回补完成："
             f"sources={result['sources']} messages={result['messages']} "
-            f"candidates={result['candidates']} skipped_reviewed={result.get('skipped_reviewed', 0)} "
+            f"approved={result.get('approved', result.get('candidates', 0))} skipped_reviewed={result.get('skipped_reviewed', 0)} "
             f"skipped_invalid={result.get('skipped_invalid', 0)}"
         )
 
