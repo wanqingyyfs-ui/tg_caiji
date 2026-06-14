@@ -33,13 +33,25 @@ def redirect(path: str) -> RedirectResponse:
     return RedirectResponse(path, status_code=303)
 
 
+def _count_by_status_with_threshold(status: str, min_count: int) -> int:
+    where = "status=?"
+    params: list[Any] = [status]
+    if min_count > 0:
+        where += " AND count IS NOT NULL AND count >= ?"
+        params.append(min_count)
+    with storage.connect(settings.collector_db) as conn:
+        return int(conn.execute(f"SELECT COUNT(*) FROM candidates WHERE {where}", params).fetchone()[0])
+
+
 def public_stats() -> dict[str, Any]:
-    raw = storage.stats(settings.collector_db)
-    exported = int(raw.get("exported", 0) or 0)
-    unexported = int(raw.get("approved", 0) or 0)
-    collected = exported + unexported
-    raw.update({"collected": collected, "exported": exported, "unexported": unexported})
-    return raw
+    min_count = get_min_member_count(settings.collector_db)
+    exported = _count_by_status_with_threshold("exported", min_count)
+    unexported = _count_by_status_with_threshold("approved", min_count)
+    return {
+        "collected": exported + unexported,
+        "exported": exported,
+        "unexported": unexported,
+    }
 
 
 def _download_filename(status: str, fmt: str) -> str:
@@ -48,9 +60,11 @@ def _download_filename(status: str, fmt: str) -> str:
 
 
 def _export_rows_for_download(min_confidence: float) -> tuple[list[dict[str, Any]], list[int]]:
+    min_count = get_min_member_count(settings.collector_db)
     rows, _ = storage.list_candidates(
         settings.collector_db,
         status="approved",
+        min_count=min_count if min_count > 0 else None,
         min_confidence=min_confidence,
         limit=100000,
         offset=0,
