@@ -167,7 +167,9 @@ def main() -> None:
     if args.command == "web":
         host = args.host or settings.admin_host
         port = args.port or settings.admin_port
-        uvicorn.run("collector.webapp:app", host=host, port=port, reload=False)
+        from .webapp import app
+
+        uvicorn.run(app, host=host, port=port, reload=False)
         return
 
 
