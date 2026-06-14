@@ -19,16 +19,27 @@ def _entity_name(entity: Any, fallback: str = "unknown") -> str:
 
 async def _resolve_enabled_sources(client, settings: Settings) -> list[tuple[dict[str, Any], Any]]:
     resolved = []
+    sources = storage.list_sources(settings.collector_db, enabled=True)
+    print(f"数据库启用监听源数量：{len(sources)}")
+    for source in sources:
+        print(f"启用监听源：id={source['id']} name={source['name']} ref={source['chat_ref']}")
+
     dialog_map = await build_dialog_username_map(client)
-    for source in storage.list_sources(settings.collector_db, enabled=True):
+    print(f"当前账号对话列表可匹配 username 数量：{len(dialog_map)}")
+
+    failed = 0
+    for source in sources:
         try:
             entity = await resolve_source_from_dialogs(client, source["chat_ref"], dialog_map)
             resolved.append((source, entity))
             storage.update_source_error(settings.collector_db, int(source["id"]), None)
-            print(f"监听源解析成功：{source['name']} -> {_entity_name(entity, source['chat_ref'])}")
+            print(f"监听源解析成功：id={source['id']} name={source['name']} -> {_entity_name(entity, source['chat_ref'])}")
         except Exception as exc:
+            failed += 1
             storage.update_source_error(settings.collector_db, int(source["id"]), str(exc))
-            print(f"监听源解析失败：{source['name']} / {source['chat_ref']} / {exc}")
+            print(f"监听源解析失败：id={source['id']} name={source['name']} ref={source['chat_ref']} error={exc}")
+
+    print(f"监听源解析汇总：启用={len(sources)} 成功={len(resolved)} 失败={failed}")
     return resolved
 
 
