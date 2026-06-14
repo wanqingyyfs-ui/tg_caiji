@@ -3,19 +3,36 @@
 {% block content %}
 <h1>采集统计</h1>
 
+{% if message %}
+<section class="panel">
+  <strong>{{ message }}</strong>
+</section>
+{% endif %}
+
 <section class="cards big-stats">
   <div class="card stat-card">
-    <div class="num">{{ stats.collected }}</div>
+    <div class="num" id="stat-collected">{{ stats.collected }}</div>
     <div class="muted">总共采集</div>
   </div>
   <div class="card stat-card">
-    <div class="num">{{ stats.exported }}</div>
+    <div class="num" id="stat-exported">{{ stats.exported }}</div>
     <div class="muted">已导出</div>
   </div>
   <div class="card stat-card">
-    <div class="num">{{ stats.unexported }}</div>
+    <div class="num" id="stat-unexported">{{ stats.unexported }}</div>
     <div class="muted">未导出</div>
   </div>
+</section>
+
+<section class="panel">
+  <form method="post" action="/settings/min-member-count" class="filters">
+    <strong>采集门槛</strong>
+    <label>最低人数
+      <input name="min_member_count" type="number" min="0" step="1" value="{{ min_member_count }}">
+    </label>
+    <button type="submit">保存门槛</button>
+    <span class="muted">例如设置 100 后，只保存人数达到 100 或以上的资源。</span>
+  </form>
 </section>
 
 <section class="panel">
@@ -24,7 +41,7 @@
     <button id="pause-refresh" type="button" class="secondary">暂停刷新</button>
     <button id="resume-refresh" type="button" style="display:none">恢复自动刷新</button>
     <span class="muted">当前自动刷新：<strong id="refresh-state">开启</strong></span>
-    <span class="muted">最后同步：{{ now }}</span>
+    <span class="muted">最后同步：<strong id="last-sync">{{ now }}</strong></span>
   </div>
 </section>
 
@@ -44,7 +61,7 @@
       <input name="mark_exported" type="checkbox" value="true" checked> 下载后标记为已导出
     </label>
     <button type="submit">下载导出文件</button>
-    <span class="muted">只导出未导出的资源；文件保存位置由浏览器下载设置决定。</span>
+    <span class="muted">文件保存位置由浏览器下载设置决定。</span>
   </form>
 </section>
 
@@ -55,6 +72,10 @@
   const resumeBtn = document.getElementById("resume-refresh");
   const refreshBtn = document.getElementById("refresh-now");
   const state = document.getElementById("refresh-state");
+  const collected = document.getElementById("stat-collected");
+  const exported = document.getElementById("stat-exported");
+  const unexported = document.getElementById("stat-unexported");
+  const lastSync = document.getElementById("last-sync");
   let timer = null;
 
   function isPaused() {
@@ -68,17 +89,27 @@
     resumeBtn.style.display = paused ? "inline-block" : "none";
   }
 
+  async function syncStats() {
+    const res = await fetch("/api/stats", {cache: "no-store"});
+    const data = await res.json();
+    collected.textContent = data.stats.collected;
+    exported.textContent = data.stats.exported;
+    unexported.textContent = data.stats.unexported;
+    lastSync.textContent = data.now;
+  }
+
   function schedule() {
     if (timer) clearTimeout(timer);
     if (!isPaused()) {
-      timer = setTimeout(function () {
-        window.location.reload();
+      timer = setTimeout(async function () {
+        await syncStats();
+        schedule();
       }, 8000);
     }
   }
 
-  refreshBtn.addEventListener("click", function () {
-    window.location.reload();
+  refreshBtn.addEventListener("click", async function () {
+    await syncStats();
   });
 
   pauseBtn.addEventListener("click", function () {
