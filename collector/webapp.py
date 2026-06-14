@@ -37,7 +37,7 @@ def clean_status(value: str | None) -> str | None:
         return value
     if value == "all":
         return None
-    return "new"
+    return "approved"
 
 
 def candidates_url(page: int = 1, **filters: Any) -> str:
