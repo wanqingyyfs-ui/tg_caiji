@@ -151,7 +151,7 @@ def main() -> None:
     parser.add_argument("--no-mentions", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--backfill-on-start", action="store_true", default=True)
-    parser.add_argument("--backfill-limit", type=int, default=500)
+    parser.add_argument("--backfill-limit", type=int, default=10)
     parser.add_argument("--enrich-limit", type=int, default=300)
     parser.add_argument("--enrich-interval", type=int, default=180)
     args = parser.parse_args()
