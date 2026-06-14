@@ -2,10 +2,12 @@ $ErrorActionPreference = "Stop"
 
 Set-Location $PSScriptRoot
 
-$appName = "万青TG群频采集"
+# Build Chinese app name without non-ASCII PowerShell string literals.
+# Name: Wanqing TG group/channel collector
+$appName = -join ([char[]](0x4E07, 0x9752, 0x0054, 0x0047, 0x7FA4, 0x9891, 0x91C7, 0x96C6))
 
 if (!(Test-Path ".venv\Scripts\python.exe")) {
-    Write-Host "未找到 .venv，正在创建虚拟环境..."
+    Write-Host "Virtual environment not found. Creating .venv..."
     python -m venv .venv
 }
 
@@ -41,7 +43,7 @@ pyinstaller `
   --hidden-import "uvicorn.lifespan.on" `
   collector_exe_launcher.py
 
-$dist = Join-Path $PSScriptRoot "dist\$appName"
+$dist = Join-Path $PSScriptRoot ("dist\" + $appName)
 New-Item -ItemType Directory -Force -Path (Join-Path $dist "data\sessions") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $dist "exports") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $dist "logs") | Out-Null
@@ -59,7 +61,7 @@ Get-ChildItem "data\sessions" -ErrorAction SilentlyContinue | ForEach-Object {
 }
 
 Write-Host ""
-Write-Host "图标文件：assets\app_icon.ico"
-Write-Host "打包完成：$dist"
-Write-Host "双击运行：$dist\$appName.exe"
-Write-Host "注意：.env、data、exports 都放在 exe 同目录，方便以后修改和备份。"
+Write-Host "Icon file: assets\app_icon.ico"
+Write-Host "Build completed: $dist"
+Write-Host "Run exe: $dist\$appName.exe"
+Write-Host "Keep .env, data and exports in the same folder as the exe."
