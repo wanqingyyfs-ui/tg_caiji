@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from . import storage
-from .extractor import extract_candidates
+from .extractor import extract_candidates_from_message
 from .gate import handle_link
 from .settings import Settings
 from .source_resolver import build_dialog_username_map, resolve_source_from_dialogs
@@ -33,7 +33,7 @@ async def backfill(settings: Settings, limit: int | None = None, include_mention
             async for message in client.iter_messages(entity, limit=current_limit):
                 total_messages += 1
                 text = message.raw_text or ""
-                items = extract_candidates(text, include_mentions=include_mentions)
+                items = extract_candidates_from_message(message, include_mentions=include_mentions)
                 if not items:
                     continue
                 max_message_id = max(max_message_id or 0, int(message.id))
