@@ -492,7 +492,7 @@ def list_candidates(
         params.append(float(min_confidence))
 
     where_sql = " WHERE " + " AND ".join(where) if where else ""
-    limit = max(1, min(int(limit), 200))
+    limit = max(1, min(int(limit), 100000))
     offset = max(0, int(offset))
 
     with connect(db_path) as conn:
