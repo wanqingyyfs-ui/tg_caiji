@@ -100,7 +100,7 @@ async def supervise(args: argparse.Namespace) -> None:
 
     if args.open_browser:
         await asyncio.sleep(2)
-        webbrowser.open(f"http://{args.host}:{args.port}/candidates")
+        webbrowser.open(f"http://{args.host}:{args.port}/")
 
     if not args.no_telegram_listener:
         processes.append(
@@ -114,7 +114,7 @@ async def supervise(args: argparse.Namespace) -> None:
                 ),
             )
         )
-        print("Telegram 登录账号只用于读取监听源消息；候选资源类型和人数只用公开网页解析。", flush=True)
+        print("Telegram 登录账号只用于读取已加入群/频道消息；候选资源类型和人数只用公开网页解析。", flush=True)
     else:
         print("已按参数跳过 Telegram 登录监听；仅运行 Web 和公开页 enrich。", flush=True)
 
@@ -123,7 +123,7 @@ async def supervise(args: argparse.Namespace) -> None:
         enrich_task = asyncio.create_task(enrich_loop(limit=args.enrich_limit, interval=args.enrich_interval))
 
     print("一键服务已启动。按 Ctrl+C 可全部停止。", flush=True)
-    print(f"Web 地址：http://{args.host}:{args.port}/candidates", flush=True)
+    print(f"Web 地址：http://{args.host}:{args.port}/", flush=True)
 
     while not stop_event.is_set():
         for managed in list(processes):
