@@ -5,7 +5,7 @@ from typing import Any
 from telethon import events
 
 from . import storage
-from .extractor import extract_candidates
+from .extractor import extract_candidates_from_message
 from .gate import handle_link
 from .safety import safe_snippet
 from .settings import Settings
@@ -73,8 +73,9 @@ async def listen(
 
         @client.on(events.NewMessage(chats=chats))
         async def handler(event):
-            text = event.raw_text or ""
-            found = extract_candidates(text, include_mentions=include_mentions)
+            message = event.message
+            text = message.raw_text or ""
+            found = extract_candidates_from_message(message, include_mentions=include_mentions)
 
             try:
                 chat = await event.get_chat()
@@ -85,7 +86,7 @@ async def listen(
             if debug:
                 text_preview = safe_snippet(text, max_len=120)
                 print(
-                    f"收到消息：chat={source_name} message_id={event.message.id} "
+                    f"收到消息：chat={source_name} message_id={message.id} "
                     f"links={len(found)} text={text_preview}"
                 )
 
@@ -97,8 +98,8 @@ async def listen(
                     settings.collector_db,
                     item,
                     source_chat=source_name,
-                    source_message_id=event.message.id,
-                    source_message_date=event.message.date.isoformat() if event.message.date else None,
+                    source_message_id=message.id,
+                    source_message_date=message.date.isoformat() if message.date else None,
                     text=text,
                 )
                 if result.action == "candidate":
