@@ -11,6 +11,34 @@
 {% endif %}
 
 <section class="panel">
+  <form method="get" action="/export/download" class="filters">
+    <strong>导出下载</strong>
+    <label>导出状态
+      <select name="status">
+        <option value="approved" selected>已通过</option>
+        <option value="new">待审核</option>
+        <option value="exported">已导出</option>
+        <option value="rejected">已拒绝</option>
+      </select>
+    </label>
+    <label>格式
+      <select name="format">
+        <option value="jsonl" selected>JSONL：给 tg_suoyin 导入</option>
+        <option value="csv">CSV：表格查看</option>
+      </select>
+    </label>
+    <label>最低置信度
+      <input name="min_confidence" type="number" step="0.01" min="0" max="1" value="0">
+    </label>
+    <label>
+      <input name="mark_exported" type="checkbox" value="true"> 下载后标记为已导出
+    </label>
+    <button type="submit">下载导出文件</button>
+    <span class="muted">文件会交给浏览器下载，保存位置由浏览器设置决定。</span>
+  </form>
+</section>
+
+<section class="panel">
   <form method="get" action="/candidates" class="filters">
     <label>状态
       <select name="status">
