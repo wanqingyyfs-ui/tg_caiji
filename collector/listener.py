@@ -9,23 +9,20 @@ from .extractor import extract_candidates
 from .gate import handle_link
 from .safety import safe_snippet
 from .settings import Settings
+from .source_resolver import build_dialog_username_map, entity_title, resolve_source_from_dialogs
 from .telegram_client import build_client
 
 
 def _entity_name(entity: Any, fallback: str = "unknown") -> str:
-    return (
-        getattr(entity, "title", None)
-        or getattr(entity, "username", None)
-        or getattr(entity, "first_name", None)
-        or str(getattr(entity, "channel_id", None) or getattr(entity, "chat_id", None) or getattr(entity, "user_id", None) or getattr(entity, "id", None) or fallback)
-    )
+    return entity_title(entity) or fallback
 
 
 async def _resolve_enabled_sources(client, settings: Settings) -> list[tuple[dict[str, Any], Any]]:
     resolved = []
+    dialog_map = await build_dialog_username_map(client)
     for source in storage.list_sources(settings.collector_db, enabled=True):
         try:
-            entity = await client.get_input_entity(source["chat_ref"])
+            entity = await resolve_source_from_dialogs(client, source["chat_ref"], dialog_map)
             resolved.append((source, entity))
             storage.update_source_error(settings.collector_db, int(source["id"]), None)
             print(f"监听源解析成功：{source['name']} -> {_entity_name(entity, source['chat_ref'])}")
@@ -59,7 +56,7 @@ async def listen(
     async with client:
         resolved = await _resolve_enabled_sources(client, settings)
         if not resolved:
-            raise SystemExit("没有可监听的启用来源，或所有来源都解析失败。请先运行 doctor 检查。")
+            raise SystemExit("没有可监听的启用来源。请确认账号已经加入来源，并且来源在 Telegram 对话列表里。")
 
         chats = [entity for _, entity in resolved]
 
