@@ -11,7 +11,7 @@ from .telegram_client import build_client
 async def backfill(settings: Settings, limit: int | None = None, include_mentions: bool = False) -> dict[str, int]:
     client = build_client(settings)
     total_messages = 0
-    total_candidates = 0
+    total_approved = 0
     skipped_reviewed = 0
     skipped_invalid = 0
     sources_done = 0
@@ -46,8 +46,8 @@ async def backfill(settings: Settings, limit: int | None = None, include_mention
                         source_message_date=message.date.isoformat() if message.date else None,
                         text=text,
                     )
-                    if result.action == "candidate":
-                        total_candidates += 1
+                    if result.action == "approved":
+                        total_approved += 1
                     elif result.reason in {"approved", "rejected", "exported", "reviewed"}:
                         skipped_reviewed += 1
                     else:
@@ -59,7 +59,8 @@ async def backfill(settings: Settings, limit: int | None = None, include_mention
     return {
         "sources": sources_done,
         "messages": total_messages,
-        "candidates": total_candidates,
+        "approved": total_approved,
+        "candidates": total_approved,
         "skipped_reviewed": skipped_reviewed,
         "skipped_invalid": skipped_invalid,
     }
