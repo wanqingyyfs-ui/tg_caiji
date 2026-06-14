@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}采集统计 - TG Suoyin Collector{% endblock %}
+{% block content %}
+<h1>采集统计</h1>
+
+<section class="cards big-stats">
+  <div class="card stat-card">
+    <div class="num">{{ stats.collected }}</div>
+    <div class="muted">总共采集</div>
+  </div>
+  <div class="card stat-card">
+    <div class="num">{{ stats.exported }}</div>
+    <div class="muted">已导出</div>
+  </div>
+  <div class="card stat-card">
+    <div class="num">{{ stats.unexported }}</div>
+    <div class="muted">未导出</div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="toolbar single-toolbar">
+    <button id="refresh-now" type="button">立即同步刷新</button>
+    <button id="pause-refresh" type="button" class="secondary">暂停刷新</button>
+    <button id="resume-refresh" type="button" style="display:none">恢复自动刷新</button>
+    <span class="muted">当前自动刷新：<strong id="refresh-state">开启</strong></span>
+    <span class="muted">最后同步：{{ now }}</span>
+  </div>
+</section>
+
+<section class="panel">
+  <form method="get" action="/export/download" class="filters">
+    <strong>导出未导出资源</strong>
+    <label>格式
+      <select name="format">
+        <option value="jsonl" selected>JSONL：给 tg_suoyin 导入</option>
+        <option value="csv">CSV：表格查看</option>
+      </select>
+    </label>
+    <label>最低置信度
+      <input name="min_confidence" type="number" step="0.01" min="0" max="1" value="0">
+    </label>
+    <label class="checkbox">
+      <input name="mark_exported" type="checkbox" value="true" checked> 下载后标记为已导出
+    </label>
+    <button type="submit">下载导出文件</button>
+    <span class="muted">只导出未导出的资源；文件保存位置由浏览器下载设置决定。</span>
+  </form>
+</section>
+
+<script>
+(function () {
+  const key = "tg_collector_refresh_paused";
+  const pauseBtn = document.getElementById("pause-refresh");
+  const resumeBtn = document.getElementById("resume-refresh");
+  const refreshBtn = document.getElementById("refresh-now");
+  const state = document.getElementById("refresh-state");
+  let timer = null;
+
+  function isPaused() {
+    return localStorage.getItem(key) === "1";
+  }
+
+  function updateUI() {
+    const paused = isPaused();
+    state.textContent = paused ? "暂停" : "开启";
+    pauseBtn.style.display = paused ? "none" : "inline-block";
+    resumeBtn.style.display = paused ? "inline-block" : "none";
+  }
+
+  function schedule() {
+    if (timer) clearTimeout(timer);
+    if (!isPaused()) {
+      timer = setTimeout(function () {
+        window.location.reload();
+      }, 8000);
+    }
+  }
+
+  refreshBtn.addEventListener("click", function () {
+    window.location.reload();
+  });
+
+  pauseBtn.addEventListener("click", function () {
+    localStorage.setItem(key, "1");
+    updateUI();
+    schedule();
+  });
+
+  resumeBtn.addEventListener("click", function () {
+    localStorage.removeItem(key);
+    updateUI();
+    schedule();
+  });
+
+  updateUI();
+  schedule();
+})();
+</script>
+{% endblock %}
