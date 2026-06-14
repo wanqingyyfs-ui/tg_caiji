@@ -81,7 +81,7 @@ def main() -> None:
     export_cmd.add_argument("--min-confidence", type=float, default=0.0)
     export_cmd.add_argument("--mark-exported", action="store_true")
 
-    web_cmd = sub.add_parser("web", help="启动审核面板")
+    web_cmd = sub.add_parser("web", help="启动管理面板")
     web_cmd.add_argument("--host", default=None)
     web_cmd.add_argument("--port", type=int, default=None)
 
@@ -124,7 +124,7 @@ def main() -> None:
         result = asyncio.run(backfill(settings, limit=args.limit, include_mentions=args.include_mentions))
         print(
             f"回补完成：sources={result['sources']} messages={result['messages']} "
-            f"candidates={result['candidates']} skipped_reviewed={result.get('skipped_reviewed', 0)} "
+            f"approved={result.get('approved', result.get('candidates', 0))} skipped_reviewed={result.get('skipped_reviewed', 0)} "
             f"skipped_invalid={result.get('skipped_invalid', 0)}"
         )
         return
