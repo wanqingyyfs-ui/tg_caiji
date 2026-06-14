@@ -74,6 +74,19 @@ def handle_link(
     if not candidate_id:
         return GateResult("ignored", username, url, "reviewed")
 
+    row = storage.get_candidate(db_path, candidate_id)
+    if row and row.get("status") in {"approved", "rejected", "exported"}:
+        remember_username(
+            db_path,
+            username,
+            str(row.get("status")),
+            reason=str(row.get("reject_reason") or row.get("status")),
+            title=row.get("title") or row.get("name") or meta.title,
+            type_value=row.get("type") or row.get("type_hint") or meta.type_hint,
+            count=row.get("count") or meta.count,
+        )
+        return GateResult("ignored", username, url, str(row.get("status")), count=meta.count, type_hint=meta.type_hint)
+
     storage.update_candidate_meta(
         db_path,
         url,
@@ -87,4 +100,14 @@ def handle_link(
             "count": meta.count,
         },
     )
-    return GateResult("candidate", username, url, candidate_id=candidate_id, count=meta.count, type_hint=meta.type_hint)
+    storage.set_candidate_status(db_path, candidate_id, "approved", note="auto_approved_after_dedupe")
+    remember_username(
+        db_path,
+        username,
+        "approved",
+        reason="auto_approved_after_dedupe",
+        title=meta.title or username,
+        type_value=meta.type_hint,
+        count=meta.count,
+    )
+    return GateResult("approved", username, url, candidate_id=candidate_id, count=meta.count, type_hint=meta.type_hint)
