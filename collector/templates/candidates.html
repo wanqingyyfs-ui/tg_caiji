@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}候选资源 - TG Suoyin Collector{% endblock %}
+{% block title %}资源列表 - TG Suoyin Collector{% endblock %}
 {% block content %}
 <meta http-equiv="refresh" content="8">
-<h1>候选资源</h1>
+<h1>资源列表</h1>
 
 {% if message %}
 <section class="panel">
@@ -15,8 +15,8 @@
     <strong>导出下载</strong>
     <label>导出状态
       <select name="status">
-        <option value="approved" selected>已通过</option>
-        <option value="new">待审核</option>
+        <option value="approved" selected>已通过/自动通过</option>
+        <option value="new">待审核（保留）</option>
         <option value="exported">已导出</option>
         <option value="rejected">已拒绝</option>
       </select>
@@ -42,9 +42,9 @@
   <form method="get" action="/candidates" class="filters">
     <label>状态
       <select name="status">
-        <option value="new" {% if filters.status == "new" %}selected{% endif %}>待审核</option>
+        <option value="approved" {% if filters.status == "approved" %}selected{% endif %}>已通过/自动通过</option>
         <option value="all" {% if filters.status == "all" %}selected{% endif %}>全部记录</option>
-        <option value="approved" {% if filters.status == "approved" %}selected{% endif %}>已通过</option>
+        <option value="new" {% if filters.status == "new" %}selected{% endif %}>待审核（保留）</option>
         <option value="rejected" {% if filters.status == "rejected" %}selected{% endif %}>已拒绝</option>
         <option value="exported" {% if filters.status == "exported" %}selected{% endif %}>已导出</option>
       </select>
@@ -77,14 +77,14 @@
       <input name="q" value="{{ filters.q }}" placeholder="电影、科技、资源、简介关键词">
     </label>
     <button type="submit">筛选</button>
-    <a class="button secondary" href="/candidates">只看待审核</a>
+    <a class="button secondary" href="/candidates">只看自动通过</a>
   </form>
 </section>
 
 <section class="panel">
   <div class="toolbar">
     <strong>当前筛选共 {{ total }} 条；本页 {{ items|length }} 条</strong>
-    <span class="muted">页面每 8 秒自动刷新。已通过/已拒绝不会再出现在默认候选列表。</span>
+    <span class="muted">页面每 8 秒自动刷新。新发现并通过公开页校验的资源会自动进入已通过。</span>
   </div>
   <form method="post" action="/candidates/batch">
     <input type="hidden" name="return_to" value="{{ current_url }}">
@@ -123,7 +123,7 @@
         </tr>
       {% endfor %}
       {% if not items %}
-        <tr><td colspan="8">当前没有待审核候选。</td></tr>
+        <tr><td colspan="8">当前没有符合条件的资源。</td></tr>
       {% endif %}
       </tbody>
     </table>
