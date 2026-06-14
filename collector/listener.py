@@ -102,10 +102,10 @@ async def listen(
                     source_message_date=message.date.isoformat() if message.date else None,
                     text=text,
                 )
-                if result.action == "candidate":
+                if result.action == "approved":
                     count_text = result.count if result.count is not None else "-"
                     print(
-                        f"新增候选资源：id={result.candidate_id} url={result.url} "
+                        f"自动通过资源：id={result.candidate_id} url={result.url} "
                         f"type={result.type_hint or '-'} count={count_text}"
                     )
                 elif debug:
@@ -113,7 +113,7 @@ async def listen(
 
         print(f"正在监听 {len(chats)} 个来源。include_mentions={include_mentions}。按 Ctrl+C 停止。")
         if debug:
-            print("调试模式已开启：会打印收到消息、跳过原因和新增候选。")
+            print("调试模式已开启：会打印收到消息、跳过原因和自动通过资源。")
         try:
             await client.run_until_disconnected()
         except (KeyboardInterrupt, asyncio.CancelledError):
