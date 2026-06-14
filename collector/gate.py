@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from . import storage
+from .app_config import get_min_member_count
 from .normalizer import canonical_username
 from .public_page import fetch_public_page_meta
 from .review_memory import remember_username, reviewed_status
@@ -56,6 +57,13 @@ def handle_link(
             count=meta.count,
         )
         return GateResult("ignored", username, url, "not_resource", count=meta.count, type_hint=meta.type_hint)
+
+    min_count = get_min_member_count(db_path)
+    if min_count > 0:
+        if meta.count is None:
+            return GateResult("ignored", username, url, "count_unknown", count=meta.count, type_hint=meta.type_hint)
+        if int(meta.count) < min_count:
+            return GateResult("ignored", username, url, f"below_min_count:{min_count}", count=meta.count, type_hint=meta.type_hint)
 
     candidate_id = storage.upsert_candidate(
         db_path,
