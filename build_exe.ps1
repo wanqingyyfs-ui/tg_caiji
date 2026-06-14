@@ -31,6 +31,11 @@ pyinstaller `
   --add-data "collector\templates;collector\templates" `
   --add-data "collector\static;collector\static" `
   --add-data "assets;assets" `
+  --hidden-import "collector.main" `
+  --hidden-import "collector.webapp" `
+  --hidden-import "collector.listener" `
+  --hidden-import "collector.backfill" `
+  --hidden-import "collector.run_all" `
   --hidden-import "uvicorn.logging" `
   --hidden-import "uvicorn.loops" `
   --hidden-import "uvicorn.loops.auto" `
