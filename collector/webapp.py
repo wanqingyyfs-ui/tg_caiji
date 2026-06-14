@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import csv
+import io
+import json
+from datetime import datetime
 from typing import Annotated, Any
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import storage
-from .exporter import export_jsonl
+from .exporter import candidate_to_import_item, export_jsonl
 from .review_memory import bootstrap_from_candidates, ensure_review_memory, remember_candidate_ids
 from .settings import PROJECT_ROOT, get_settings, ensure_runtime_dirs
 
@@ -45,6 +49,31 @@ def candidates_url(page: int = 1, **filters: Any) -> str:
     if params == {"page": 1}:
         return "/candidates"
     return "/candidates?" + urlencode(params)
+
+
+def _download_filename(status: str, fmt: str) -> str:
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"tg_suoyin_{status}_{stamp}.{fmt}"
+
+
+def _export_rows_for_download(status: str, min_confidence: float) -> tuple[list[dict[str, Any]], list[int]]:
+    rows, _ = storage.list_candidates(
+        settings.collector_db,
+        status=status,
+        min_confidence=min_confidence,
+        limit=100000,
+        offset=0,
+    )
+    export_rows: list[dict[str, Any]] = []
+    ids: list[int] = []
+    for row in rows:
+        if not row.get("url") or not row.get("username"):
+            continue
+        if row.get("private"):
+            continue
+        export_rows.append(candidate_to_import_item(row))
+        ids.append(int(row["id"]))
+    return export_rows, ids
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -206,6 +235,38 @@ async def review_candidate(
         remember_candidate_ids(settings.collector_db, [candidate_id], status, reject_reason or note or status)
     storage.set_candidate_status(settings.collector_db, candidate_id, status, note=note, reject_reason=reject_reason)
     return redirect("/candidates")
+
+
+@app.get("/export/download")
+async def export_download(
+    status: str = Query(default="approved", pattern="^(new|approved|rejected|exported)$"),
+    format: str = Query(default="jsonl", pattern="^(jsonl|csv)$"),
+    min_confidence: float = Query(default=0.0, ge=0.0, le=1.0),
+    mark_exported: bool = Query(default=False),
+):
+    rows, ids = _export_rows_for_download(status, min_confidence)
+    filename = _download_filename(status, format)
+
+    if format == "csv":
+        output = io.StringIO()
+        fields = ["url", "username", "name", "type_hint", "source_chat", "source_message_id", "discovered_at", "confidence"]
+        writer = csv.DictWriter(output, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+        content = "\ufeff" + output.getvalue()
+        media_type = "text/csv; charset=utf-8"
+    else:
+        content = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
+        media_type = "application/x-ndjson; charset=utf-8"
+
+    if mark_exported:
+        storage.mark_exported(settings.collector_db, ids, f"browser-download:{filename}", status)
+
+    return Response(
+        content=content.encode("utf-8"),
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.post("/export")
