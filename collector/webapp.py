@@ -33,6 +33,15 @@ def redirect(path: str) -> RedirectResponse:
     return RedirectResponse(path, status_code=303)
 
 
+def public_stats() -> dict[str, Any]:
+    raw = storage.stats(settings.collector_db)
+    exported = int(raw.get("exported", 0) or 0)
+    unexported = int(raw.get("approved", 0) or 0)
+    collected = exported + unexported
+    raw.update({"collected": collected, "exported": exported, "unexported": unexported})
+    return raw
+
+
 def _download_filename(status: str, fmt: str) -> str:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"tg_suoyin_{status}_{stamp}.{fmt}"
@@ -62,7 +71,7 @@ def dashboard_context(request: Request, message: str = "") -> dict[str, Any]:
     bootstrap_from_candidates(settings.collector_db)
     return {
         "request": request,
-        "stats": storage.stats(settings.collector_db),
+        "stats": public_stats(),
         "min_member_count": get_min_member_count(settings.collector_db),
         "now": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "message": message,
@@ -129,7 +138,7 @@ async def export_download(
 @app.get("/api/stats")
 async def api_stats():
     return {
-        "stats": storage.stats(settings.collector_db),
+        "stats": public_stats(),
         "min_member_count": get_min_member_count(settings.collector_db),
         "now": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
@@ -137,4 +146,4 @@ async def api_stats():
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "db": str(settings.collector_db), "stats": storage.stats(settings.collector_db)}
+    return {"ok": True, "db": str(settings.collector_db), "stats": public_stats()}
